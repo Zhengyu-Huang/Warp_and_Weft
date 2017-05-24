@@ -3,7 +3,7 @@ from Beam import *
 import matplotlib.pyplot as plt
 
 class Warp:
-    def __init__(self):
+    def __init__(self,type):
 
         '''
                       Name            Description
@@ -24,8 +24,11 @@ class Warp:
                     g               Essential B.C. Value at each node is an array(nDoF, nNodes)
                     h               Natural B.C. Value at each node
         '''
-
-        self._horizontal_beam_data()
+        self.type = type
+        if(type == 'horizontal beam'):
+            self._horizontal_beam_data()
+        elif(type == 'slanting beam'):
+            self._slanting_beam_data()
 
 
 
@@ -61,7 +64,7 @@ class Warp:
         self.nDoF = nDoF = 3
         self.nNodesElement = 2
 
-        self.nElements = nElements = 5
+        self.nElements = nElements = 100
 
         self.nNodes = nNodes = self.nElements + 1
         self.nEquations = self.nDoF * (self.nNodes - 1)
@@ -89,11 +92,52 @@ class Warp:
         self.EBC[:,0] = 1
 
         # Force
-        fx,fy,m = 1.0, 0.0, 0.0
+        fx,fy,m = 0.0, 0.001, 0.0
         self.f = np.zeros([nDoF, nNodes])
         self.f[:, -1] = fx, fy, m
 
+    def _slanting_beam_data(self):
+        '''
+        g is dirichlet boundary condition
+        f is the internal force
+        '''
 
+        self.nDim = nDim = 2
+        self.nDoF = nDoF = 3
+        self.nNodesElement = 2
+
+        self.nElements = nElements = 100
+
+        self.nNodes = nNodes = self.nElements + 1
+        self.nEquations = self.nDoF * (self.nNodes - 1)
+
+
+        # Young's module
+        self.E = np.empty(nElements)
+        self.E.fill(1.0)
+
+        # Cross section area
+        self.A = np.empty(nElements)
+        self.A.fill(1.0)
+
+        # Moment inertial
+        self.I = np.empty(nElements)
+        self.I.fill(1.0)
+
+        # Initial condition
+        self.Coord = np.empty([nDim,nNodes])
+        self.Coord[0,:] = np.linspace(0, np.sqrt(2)/2.0, nNodes)
+        self.Coord[1,:] = np.linspace(0, np.sqrt(2)/2.0, nNodes)
+
+        # Essential bounary condition
+        self.g = np.zeros([nDoF, nNodes])
+        self.EBC = np.zeros([nDoF,nNodes],dtype='int')
+        self.EBC[:,0] = 1
+
+        # Force
+        fx,fy,m = -np.sqrt(2)/2.0, np.sqrt(2)/2.0, 0.0
+        self.f = np.zeros([nDoF, nNodes])
+        self.f[:, -1] = fx, fy, m
 
     def assembly(self):
 
@@ -120,7 +164,7 @@ class Warp:
             #Step 3c: Eliminate Essential DOFs
             I = (P >= 0);
             P = P[I];
-            print(I,P)
+
             #Step 3d: Insert k_e, f_e, f_g, f_h
             K[np.ix_(P,P)] += k_e[np.ix_(I,I)]
             F[P] += f_e[I] + f_g[I]
@@ -138,7 +182,7 @@ class Warp:
         f = self.f
         IEM = self.IEM
         E,A,I,Xa,Xb = self.E[e],self.A[e],self.I[e],self.Coord[:,IEM[0,e]],self.Coord[:,IEM[1,e]]
-        k_e = LinearBeam(E,A,I,Xa,Xb)
+        k_e = LinearBeamStiffMatrix(E,A,I,Xa,Xb)
 
         #Point force
         f_e = np.reshape(f[:,IEM[:,e]], (nNodesElement*nDoF,1), order='F')
@@ -152,35 +196,33 @@ class Warp:
     def fem_calc(self):
         K,F = self.assembly()
         d = np.linalg.solve(K,F)
+        print(F,d)
         self.visualize_result(d,False)
     def visualize_result(self, d, highOrder = True):
         ID = self.ID
         nNodes = self.nNodes
+        nElements = self.nEquations
         EBC = self.EBC
         g = self.g
-        if(highOrder):
-            return
-        else:
+        x,y = np.empty(nNodes),np.empty(nNodes)
 
-            x,y = np.empty(nNodes),np.empty(nNodes)
+        for i in range(nNodes):
+            x[i] = self.Coord[0, i]  +  d[ID[0,i]] if EBC[0,i] == 0 else g[0,i]
+            y[i] = self.Coord[1, i]  +  d[ID[1,i]] if EBC[1,i] == 0 else g[1,i]
 
-            for i in range(nNodes):
-                print(ID[0,i],ID[1,i])
-                x[i] = self.Coord[0, i]  +  d[ID[0,i]] if EBC[0,i] == 0 else g[0,i]
-                y[i] = self.Coord[1, i]  +  d[ID[1,i]] if EBC[1,i] == 0 else g[1,i]
-
-            plt.plot(x,y,'-o',label='solution')
-            plt.plot(self.Coord[0,:], self.Coord[1,:],'-o', label='reference')
-            plt.xlabel('x')
-            plt.ylabel('y')
-            plt.legend()
-            plt.show()
+        plt.plot(x,y,'-o',label='solution')
+        plt.plot(self.Coord[0,:], self.Coord[1,:],'-o', label='reference')
+        #plt.plot(self.Coord[0,:], self.Coord[1,:],'-o', label='exact')
+        plt.xlabel('x')
+        plt.ylabel('y')
+        plt.legend()
+        plt.show()
 
         return
 
 
 if __name__ == "__main__":
-    warp = Warp()
+    warp = Warp('slanting beam')
     #warp.assembly()
     warp.fem_calc()
 

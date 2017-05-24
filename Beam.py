@@ -1,6 +1,38 @@
 import numpy as np
 
-def LinearBeam(E,A,I,Xa,Xb):
+
+
+def LinearBeamBasis(xi,L):
+    '''
+    This is the physics of the problem
+    Local Basis
+    initial is x \in [0,L]
+    xi = 2x/L - 1 \in [-1,1]
+    N1 = (1 - xi)/2                 x translation
+    N2 = (1 - xi)^2*(2 + xi)/4      y translation
+    N3 =  L*(1 - xi)^2*(1 + xi)/8   y bending
+    N4 = (1 + xi)/2                 x translation
+    N5 =  (1 + xi)^2*(2 - xi)/4     y translation
+    N6 = -L*(1 + xi)^2*(1 - xi)/8   y bending
+    u_x = u1 N1 + u4 N4
+    u_x(-1) = u1,  u_x(1) = u4
+    u_y = u2 N2 + u3 N3 + u5 N5 + u6 N6
+    u_y(-1) = u2,  u_y(1) = u5, u_y'(-1) = u3*L/2, u_y'(1) =  u6*L/2,
+    return value of 6 basis
+    '''
+
+    assert(xi >= -1 and xi <= 1)
+    N1 = (1 - xi)/2
+    N2 = (1 - xi)**2*(2 + xi)/4
+    N3 =  L*(1 - xi)**2*(1 + xi)/8
+    N4 = (1 + xi)/2
+    N5 =  (1 + xi)**2*(2 - xi)/4
+    N6 = -L*(1 + xi)**2*(1 - xi)/8
+
+    return N1, N2, N3, N4, N5, N6
+
+
+def LinearBeamStiffMatrix(E,A,I,Xa,Xb):
     '''
     This is the physics of the problem
     Local Basis
