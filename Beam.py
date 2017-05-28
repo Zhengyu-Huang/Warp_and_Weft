@@ -285,8 +285,8 @@ class LinearEBBeam:
             den_ = -np.outer(et_, np.dot(en_, dB) + np.dot(en_,ddxs_)*dxi_)/np.linalg.norm(dxs_) # 2 by 6
 
             enTB_ = np.dot(en_, B)
-
-            K = -wn*(np.outer(enTB_, enTB_) + (gn- rm - self.r)*(np.dot(B.T ,den_) + np.outer(np.dot(en_,dB), dxi_))) # 6 by 6
+            print('enTB is ',enTB_)
+            K = wn*(np.outer(enTB_, enTB_) - (gn- rm - self.r)*(np.dot(B.T ,den_) + np.outer(np.dot(en_,dB), dxi_))) # 6 by 6
 
             return xi_c, gn ,f_, K , dxi_,  en_, den_, xs_
 
@@ -312,7 +312,7 @@ if __name__ == "__main__":
 
 
 
-    d = np.array([0.0, 0., 0., 1., 0., 0.])
+    d = np.array([0.2, 0.1, 0.3, 1., 0.4, 0.5])
     da = d[0:3]
     db = d[3:6]
 
@@ -332,31 +332,27 @@ if __name__ == "__main__":
     #finite difference test
     #np.dot(f, dp-dm) = (wn*gn*gn/2.0)_p - (wn*gn*gn/2.0)_m
     #fp - fm = np.dot(K,dp-dm)
-    eps = np.array([0, 0,0,0,EPS,0])
+    eps = np.array([EPS, EPS,EPS,EPS,EPS,EPS])
     dp = d + eps
     dap = dp[0:3]
     dbp = dp[3:6]
 
     xi_cp, gnp ,fp, Kp, dxi_p,  en_p, den_p,x_p =horizontalBeam.closest_points_distance(dap,dbp,xm,r, wn, side)
-    print(xi_cp, gnp)
 
 
     dm = d - eps
     dam = dm[0:3]
     dbm = dm[3:6]
     xi_cm, gnm ,fm, Km, dxi_m,  en_m, den_m,x_m =horizontalBeam.closest_points_distance(dam,dbm,xm,r, wn, side)
-    print(xi_cm, gnm)
 
 
     error_dxi = (xi_cp - xi_cm - np.dot(dxi, dp - dm))
-    print('den is ', den )
     error_den = (en_p - en_m - np.dot(den, dp - dm))
     error_dP = (wn*(gnp - 2*r)**2/2.0) - (wn*(gnm-2*r)**2/2.0) - np.dot(f, dp-dm)
     error_ddP = fp - fm - np.dot(K,dp-dm)
 
     np.set_printoptions(precision=16)
     print('first derivative error of dxi is ', error_dxi)
-    print(en, en_p - (xm - x_p) / np.linalg.norm(xm-x_p), en_m - (xm - x_m) / np.linalg.norm(xm-x_m))
     print('first derivative error of den is ', error_den)
     print('first derivative error of Penalty is ', error_dP)
     print('second derivative error of Penalty is ', error_ddP)
