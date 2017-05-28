@@ -92,7 +92,7 @@ class Warp:
         self.EBC[:,0] = 1
 
         # Force
-        fx,fy,m = 0.0, 0.001, 0.0
+        fx,fy,m = 0.0,1, 0.0
         self.f = np.zeros([nDoF, nNodes])
         self.f[:, -1] = fx, fy, m
 
@@ -135,7 +135,7 @@ class Warp:
         self.EBC[:,0] = 1
 
         # Force
-        fx,fy,m = -np.sqrt(2)/2.0, np.sqrt(2)/2.0, 0.0
+        fx,fy,m = np.sqrt(2)/2.0, np.sqrt(2)/2.0, 0.0
         self.f = np.zeros([nDoF, nNodes])
         self.f[:, -1] = fx, fy, m
 
@@ -193,6 +193,20 @@ class Warp:
 
         return k_e, f_e, f_g
 
+    def _closest_node(self, xm):
+        '''
+        find the closest node on the beams
+        :param xm: master node
+        :return: g_n, f_n, K_n
+        '''
+        nNodes = self.nNodes
+        nElements = self.nElements
+        for e in range(nElements):
+            return
+
+
+
+
     def fem_calc(self):
         K,F = self.assembly()
         d = np.linalg.solve(K,F)
@@ -212,7 +226,7 @@ class Warp:
 
         plt.plot(x,y,'-o',label='solution')
         plt.plot(self.Coord[0,:], self.Coord[1,:],'-o', label='reference')
-        #plt.plot(self.Coord[0,:], self.Coord[1,:],'-o', label='exact')
+        print(d[[2,5,8]])
         plt.xlabel('x')
         plt.ylabel('y')
         plt.legend()
