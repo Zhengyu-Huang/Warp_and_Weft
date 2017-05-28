@@ -217,12 +217,7 @@ class LinearEBBeam:
         '''
         Xa0, Xb0, L = self.Xa0, self.Xb0, self.L
         s,c = (Xb0[1] - Xa0[1])/L, (Xb0[0] - Xa0[0])/L
-        R = np.array([[c, -s, 0,0,0,0],
-        [s,c,0,0,0,0],
-        [0,0,1,0,0,0],
-        [0,0,0,c,-s,0],
-        [0,0,0,s,c,0],
-        [0,0,0,0,0,1]])
+
 
         d_ = self._disp_in_local(da, db)
 
@@ -276,7 +271,7 @@ class LinearEBBeam:
             et_ = self._tangential_in_local(d_, xi_c, side)
             B,dB,ddB = self.basis(xi_c,d = 2)
             f_ = - wn * (gn - rm - self.r)*np.dot(en_, B)
-            #f = np.dot(R,f_)
+
 
             #compute Kn_
             xs_,dxs_, ddxs_ = np.dot(B,x0_ + d_), np.dot(dB,x0_ + d_), np.dot(ddB,x0_ + d_)
@@ -286,9 +281,18 @@ class LinearEBBeam:
 
             enTB_ = np.dot(en_, B)
             print('enTB is ',enTB_)
-            K = wn*(np.outer(enTB_, enTB_) - (gn- rm - self.r)*(np.dot(B.T ,den_) + np.outer(np.dot(en_,dB), dxi_))) # 6 by 6
+            K_ = wn*(np.outer(enTB_, enTB_) - (gn- rm - self.r)*(np.dot(B.T ,den_) + np.outer(np.dot(en_,dB), dxi_))) # 6 by 6
 
-            return xi_c, gn ,f_, K , dxi_,  en_, den_, xs_
+
+            R = np.array([[c, -s, 0,0,0,0],
+                          [s,c,0,0,0,0],
+                          [0,0,1,0,0,0],
+                          [0,0,0,c,-s,0],
+                          [0,0,0,s,c,0],
+                          [0,0,0,0,0,1]])
+            f = np.dot(R,f_)
+            K = np.dot(R, np.dot(K_, R.T))
+            return xi_c, gn ,f, K , dxi_,  en_, den_, xs_
 
 
 
