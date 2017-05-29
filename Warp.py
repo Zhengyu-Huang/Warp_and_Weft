@@ -99,7 +99,7 @@ class Warp:
         # Weft info
         self.nWeft = nWeft = 1
         self.wefts = wefts = np.zeros([nDim+1, nWeft]) # (x,y,r)
-        wefts[:,0] = 0.3,0.22,0.1
+        wefts[:,0] = 0.4,0.22,0.1
 
         #Penalty parameters
         self.wn = 1e8
@@ -162,31 +162,38 @@ class Warp:
         dP = np.zeros(nEquations)
         ddP = np.zeros([nEquations,nEquations])
 
-        #todo only handle the closest point!
-        for e in range(nElements):
-            ele = elements[e]
-            da,db = disp[:,e],disp[:,e+1]
-            for i in range(nWeft):
-                xm, rm = wefts[0:2,i], wefts[2,i]
-                contact, penalty, info = ele.penalty_term(da,db,xm,rm,wn)
-                if(contact):
-                    print('contact elem ',e,' local coordinate is ', info[0], 'distance is ', info[1], ' side is ',info[2])
-                    _, f_contact, k_contact = penalty
+        #Setp 5: Assemble K and F
+        closest_e = -1
+        g_min = np.inf
 
-                    #Step 3b: Get Global equation numbers
-                    P = LM[:,e]
-
-                    #Step 3c: Eliminate Essential DOFs
-                    I = (P >= 0);
-                    P = P[I];
-
-                    #Step 3d: Insert k_e, f_e, f_g, f_h
-                    ddP[np.ix_(P,P)] += k_contact[np.ix_(I,I)]
-                    dP[P] += f_contact[I]
+        for i in range(nWeft):
+            xm, rm = wefts[0:2, i], wefts[2, i]
+            for e in range(nElements):
+                ele = elements[e]
+                da, db = disp[:, e], disp[:, e + 1]
+                contact, penalty, info = ele.penalty_term(da, db, xm, rm, wn)
+                if (contact and info[1] < g_min):
+                    closest_e, g_min = e, info[1]
 
 
-        print('F', F)
-        print('dP', dP)
+            if (closest_e >= 0):
+                ele = elements[closest_e]
+                da, db = disp[:, closest_e], disp[:, closest_e + 1]
+                contact, penalty, info = ele.penalty_term(da, db, xm, rm, wn)
+                _, f_contact, k_contact = penalty
+                # Step 3b: Get Global equation numbers
+                P = LM[:, closest_e]
+
+                # Step 3c: Eliminate Essential DOFs
+                I = (P >= 0)
+                P = P[I]
+
+                # Step 3d: Insert k_e, f_e, f_g, f_h
+                ddP[np.ix_(P, P)] += k_contact[np.ix_(I, I)]
+                dP[P] += f_contact[I]
+
+
+
         dPi = np.dot(K,d) - F + dP
         ddPi = K + ddP
 
@@ -230,7 +237,7 @@ class Warp:
         MAXITE = 10000
         EPS = 1e-8
         found = False
-        alpha = 0.1
+        alpha = 0.05
         for ite in range(MAXITE):
 
             dPi,ddPi = self.assembly(d)
@@ -279,6 +286,9 @@ class Warp:
         plt.plot(coord_ref[0,:], coord_ref[1,:], '-o', label='ref')
         plt.plot(coord_cur[0,:], coord_cur[1,:],'-o', label='current')
 
+        wefts = self.wefts
+        plt.plot(wefts[0, :], wefts[1, :], 'o', label='weft')
+        plt.axis('equal')
         plt.xlabel('x')
         plt.ylabel('y')
         plt.legend()
