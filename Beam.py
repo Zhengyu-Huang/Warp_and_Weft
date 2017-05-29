@@ -137,16 +137,18 @@ class LinearEBBeam:
 
 
 
-    def _distance(self, d_ , xi,  xm_, side):
+    def _distance(self, d_ , xi,  xm_):
         '''
         find the distance (xm0 - xs(xi))*en*side
         :param xi: beam position parameter
         :param x0_: initial position
         :param d_ : displacement
         :param xm_: master node relative position
-        :param side: -1 right side is position distance;
-                      1 left side is position distance
+
         :return:
+        distance: absolute distance
+        side: -1 right side is position distance;
+               1 left side is position distance
         '''
 
         x0_ = np.array([0.,0.,self.Xa0[2], self.L, 0.,self.Xb0[2]]) #initial position of the master node
@@ -159,7 +161,11 @@ class LinearEBBeam:
 
         en = np.array([-et[1], et[0]])
 
-        return side*np.dot(xm_ - xs_, en)
+        distance = np.linalg.norm(xm_ - xs_)
+
+        side = 1 if np.dot(xm_ - xs_, en) > 0 else -1
+
+        return distance, side
 
     def _rel_position_in_local(self,xm):
         Xa0 = self.Xa0
@@ -182,7 +188,7 @@ class LinearEBBeam:
 
         return d_
 
-    def penalty_term(self,da,db,xm,rm,wn,side):
+    def penalty_term(self,da,db,xm,rm,wn):
         '''
         compute the closest point distance in initial configuration, gn is the signed distance
         gn = side*(xm -xs)*en
@@ -190,8 +196,7 @@ class LinearEBBeam:
         :param db: beam current left node displacement x,y,theta
         :param xm: rigid master node position
         :param side: master node should on the side(1 left -1 right) of the beam
-        if side = 1, left is positive right is the wall
-        if side = -1, right is positive, left is the wall
+
         :return: bool: true, find contact, false not find
                  a tuple, including penalty function information
                     P: 1/2*wn*(gn - rm - r)**2 if gn - rm -r <0  else 0
@@ -199,7 +204,9 @@ class LinearEBBeam:
                     K: Hessian matrix ddP, if P > 0
                  a tuple, including contact point information
                     xi_c: closest node local coordinate
-                    gn: signed distance
+                    gn:  distance
+                    side: 1, left is positive right is the wall
+                         -1, right is positive, left is the wall
         '''
         Xa0, Xb0, L = self.Xa0, self.Xb0, self.L
         s,c = (Xb0[1] - Xa0[1])/L, (Xb0[0] - Xa0[0])/L
@@ -239,8 +246,8 @@ class LinearEBBeam:
 
         if(xi_c > 1 or xi_c < -1 or not found):
             print("found closest points but xi_c is", xi_c)
-            dist_a = self._distance(d_, -1.0, xm_, side)
-            dist_b = self._distance(d_,  1.0, xm_, side)
+            dist_a,_ = self._distance(d_, -1.0, xm_)
+            dist_b,_ = self._distance(d_,  1.0, xm_)
             xi_c = -1.0 if(dist_a < dist_b) else 1.0
 
 
@@ -248,7 +255,7 @@ class LinearEBBeam:
 
         #compute contact force
 
-        gn = self._distance(d_, xi_c,xm_,side)
+        gn,side = self._distance(d_, xi_c,xm_)
         P = wn*(gn - rm - self.r)**2/2.0
 
         if(gn < rm + self.r):
@@ -279,7 +286,7 @@ class LinearEBBeam:
                           [0,0,0,0,0,1]])
             f = np.dot(R,f_)
             K = np.dot(R, np.dot(K_, R.T))
-            return True, (P ,f, K), (xi_c, gn)
+            return True, (P ,f, K), (xi_c, gn,side)
 
         else:
             return False, (), ()
@@ -344,25 +351,24 @@ def test_visualization():
 
 def test_derivative():
     Xa0 = np.array([0.0,0.0,0.0])
-    Xb0 = np.array([1.0,0.0,0.0])
+    Xb0 = np.array([1.0,1.0,0.0])
     E = 1.0
     r = 0.1
     myBeam = LinearEBBeam(Xa0, Xb0, E, r)
-    d = np.array([0.0, 0.3, 0.1, 0.0, 0.5, 0.5])
+    d = np.array([0.0, 0.3, 0.1, 0.3, 0.5, 0.5])
     da = d[0:3]
     db = d[3:6]
 
     myBeam.visualize(da,db, k = 10,fig = 1)
     plt.show()
 
-    xm = np.array([2.5, 0.5])
-    side = 1
+    xm = np.array([0.5, 0.6])
     wn = 1.0
-    success, penalty, info  = myBeam.penalty_term(da, db, xm, r, wn, side)
+    success, penalty, info  = myBeam.penalty_term(da, db, xm, r, wn)
     if not success:
         return
     P, f, K = penalty
-    print('contact point local coordinate is', info[0], 'signed distance is ', info[1])
+    print('contact point local coordinate is', info[0], 'distance is ', info[1], 'side is ',info[2])
 
     EPS= 0.01
 
@@ -376,7 +382,7 @@ def test_derivative():
     dap = dp[0:3]
     dbp = dp[3:6]
 
-    success, penalty_p, info_p = myBeam.penalty_term(dap,dbp,xm,r, wn, side)
+    success, penalty_p, info_p = myBeam.penalty_term(dap,dbp,xm,r, wn)
     if not success:
         return
     Pp, fp, Kp = penalty_p
@@ -384,7 +390,7 @@ def test_derivative():
     dm = d - eps
     dam = dm[0:3]
     dbm = dm[3:6]
-    success, penalty_m, info_m = myBeam.penalty_term(dam,dbm,xm,r, wn, side)
+    success, penalty_m, info_m = myBeam.penalty_term(dam,dbm,xm,r, wn)
     if not success:
         return
     Pm, fm, Km = penalty_m
