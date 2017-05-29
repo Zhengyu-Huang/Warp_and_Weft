@@ -1,5 +1,5 @@
 import numpy as np
-
+import matplotlib.pyplot as plt
 
 class LinearEBBeam:
     def __init__(self,Xa0, Xb0,E,r):
@@ -25,7 +25,8 @@ class LinearEBBeam:
         self.Xb0 = Xb0
 
         # length
-        self.L = np.sqrt((Xa0[0] - Xb0[0])**2 + (Xa0[1] - Xb0[1])**2)
+        self.L = L = np.sqrt((Xa0[0] - Xb0[0])**2 + (Xa0[1] - Xb0[1])**2)
+        self.s,self.c = (Xb0[1] - Xa0[1])/L, (Xb0[0] - Xa0[0])/L
     def basis(self, xi,d=0):
         '''
         This is the physics of the problem
@@ -181,19 +182,16 @@ class LinearEBBeam:
         return side*np.dot(xm_ - xs_, en)
 
     def _rel_position_in_local(self,xm):
-        L = self.L
-        Xa0, Xb0 = self.Xa0, self.Xb0
-        s,c = (Xb0[1] - Xa0[1])/L, (Xb0[0] - Xa0[0])/L
-        R = np.array([[c, -s],[s,c]])
+        Xa0 = self.Xa0
+        s,c = self.s, self.c
+        R = np.array([[c, s],[-s,c]])
 
         xm_ = np.dot(R, xm - Xa0[0:2])
         return xm_
 
     def _disp_in_local(self,da,db):
-        L = self.L
-        Xa0, Xb0 = self.Xa0, self.Xb0
-        s,c = (Xb0[1] - Xa0[1])/L, (Xb0[0] - Xa0[0])/L
-        R = np.array([[c, -s],[s,c]])
+        s,c = self.s, self.c
+        R = np.array([[c, s],[-s,c]])
 
         #master node, displacement in local coordinates
         d_ = np.zeros(6)
@@ -253,8 +251,8 @@ class LinearEBBeam:
 
         if(xi_c > 1 or xi_c < -1 or not found):
             print("found closest points but xi_c is", xi_c)
-            dist_a = self._distance(-1.0, d_,xm_,side)
-            dist_b = self._distance(1.0, d_,xm_,side)
+            dist_a = self._distance(d_, -1.0, xm_, side)
+            dist_b = self._distance(d_,  1.0, xm_, side)
             xi_c = -1.0 if(dist_a < dist_b) else 1.0
 
 
@@ -280,7 +278,7 @@ class LinearEBBeam:
             den_ = -np.outer(et_, np.dot(en_, dB) + np.dot(en_,ddxs_)*dxi_)/np.linalg.norm(dxs_) # 2 by 6
 
             enTB_ = np.dot(en_, B)
-            print('enTB is ',enTB_)
+
             K_ = wn*(np.outer(enTB_, enTB_) - (gn- rm - self.r)*(np.dot(B.T ,den_) + np.outer(np.dot(en_,dB), dxi_))) # 6 by 6
 
 
@@ -292,44 +290,89 @@ class LinearEBBeam:
                           [0,0,0,0,0,1]])
             f = np.dot(R,f_)
             K = np.dot(R, np.dot(K_, R.T))
-            return xi_c, gn ,f, K , dxi_,  en_, den_, xs_
+            return xi_c, gn ,f, K
+
+        else:
+            print('distance is ',gn)
+
+    def visualize(self,da,db,k = 2, fig = 1):
+        Xa0, Xb0 = self.Xa0, self.Xb0
+        X0 = np.vstack([np.linspace(Xa0[0],Xb0[0],k),np.linspace(Xa0[1],Xb0[1],k)])
+        #plot initial configuration
+        da0,db0 = np.array([0,0,Xa0[-1]]), np.array([0,0,Xb0[-1]])
+        u0 = self.visualize_helper(da0,db0,k)
+        plt.figure(fig)
+        plt.plot(X0[0,:]+u0[0,:],X0[1,:]+u0[1,:],label='ref')
+        u = self.visualize_helper(da,db,k)
+        plt.plot(X0[0,:]+u[0,:],X0[1,:]+u[1,:],label='current')
+
+
+
+    def visualize_helper(self,da, db, k):
+        c,s = self.c, self.s
+        R = np.array([[c, -s],
+                      [s, c]])
+
+        d_= self._disp_in_local(da, db)
+        xi = np.linspace(-1.0,1.0,k)
+        u_ = np.zeros([2,k])
+        u = np.zeros([2,k])
+        for i in range(k):
+            B = self.basis(xi[i],d=0)
+            u_[:,i] = np.dot(B,d_)
+            u = np.dot(R,u_)
+        return u
 
 
 
 
-
-
-
-
-if __name__ == "__main__":
-    '''
-    Test ClosestPointsDistance(Xa,Xb,da,db,xm,side):
-    horizontal beam
-    slanting beam
-    '''
+def test_basis():
 
     Xa0 = np.array([0.0,0.0,0.0])
-    Xb0 = np.array([1.0,0.0,0.0])
+    Xb0 = np.array([1.0,1.0,0.0])
     E = 1.0
     r = 0.1
-    horizontalBeam = LinearEBBeam(Xa0, Xb0,E,r)
+    myBeam = LinearEBBeam(Xa0, Xb0,E,r)
+    xi = -1.0
+    EPS = 0.001
+    B, dB, ddB = myBeam.basis(xi,d = 2)
+    Bp, dBp = myBeam.basis(xi + EPS,d = 1)
+    Bm, dBm = myBeam.basis(xi - EPS,d = 1)
+    print('Basis test\n', Bp - Bm - 2*EPS*dB,'\n', dBp - dBm - 2*EPS*ddB)
 
+def test_visualization():
+    Xa0 = np.array([0.0,0.0,0.0])
+    Xb0 = np.array([1.0,1.0,0.0])
+    E = 1.0
+    r = 0.1
+    myBeam = LinearEBBeam(Xa0, Xb0,E,r)
+    d = np.array([0.2, 0.1, 0.8, 0., 0., 0.3])
+    da = d[0:3]
+    db = d[3:6]
+    myBeam.visualize(da,db, k = 10,fig = 1)
+    plt.show()
 
-
-    d = np.array([0.2, 0.1, 0.3, 1., 0.4, 0.5])
+def test_derivative():
+    Xa0 = np.array([0.0,0.0,0.0])
+    Xb0 = np.array([1.0,1.0,0.0])
+    E = 1.0
+    r = 0.1
+    myBeam = LinearEBBeam(Xa0, Xb0, E, r)
+    d = np.array([0.2, 0.3, 0.1, 0.2, 0.5, 0.5])
     da = d[0:3]
     db = d[3:6]
 
-    xm = np.array([1.0, 0.1])
+    myBeam.visualize(da,db, k = 10,fig = 1)
+    plt.show()
+
+    xm = np.array([0.6, 0.5])
     side = 1
     wn = 1.0
-    xi_c, gn ,f, K, dxi, en, den,x =horizontalBeam.closest_points_distance(da,db,xm,r, wn, side)
-
-    #todo add rotaion
+    xi_c, gn ,f, K = myBeam.closest_points_distance(da, db, xm, r, wn, side)
 
 
 
-    EPS= 0.001
+    EPS= 0.01
 
 
 
@@ -341,37 +384,33 @@ if __name__ == "__main__":
     dap = dp[0:3]
     dbp = dp[3:6]
 
-    xi_cp, gnp ,fp, Kp, dxi_p,  en_p, den_p,x_p =horizontalBeam.closest_points_distance(dap,dbp,xm,r, wn, side)
+    xi_cp, gnp ,fp, Kp = myBeam.closest_points_distance(dap,dbp,xm,r, wn, side)
 
 
     dm = d - eps
     dam = dm[0:3]
     dbm = dm[3:6]
-    xi_cm, gnm ,fm, Km, dxi_m,  en_m, den_m,x_m =horizontalBeam.closest_points_distance(dam,dbm,xm,r, wn, side)
+    xi_cm, gnm ,fm, Km = myBeam.closest_points_distance(dam,dbm,xm,r, wn, side)
 
 
-    error_dxi = (xi_cp - xi_cm - np.dot(dxi, dp - dm))
-    error_den = (en_p - en_m - np.dot(den, dp - dm))
+
     error_dP = (wn*(gnp - 2*r)**2/2.0) - (wn*(gnm-2*r)**2/2.0) - np.dot(f, dp-dm)
     error_ddP = fp - fm - np.dot(K,dp-dm)
 
     np.set_printoptions(precision=16)
-    print('first derivative error of dxi is ', error_dxi)
-    print('first derivative error of den is ', error_den)
     print('first derivative error of Penalty is ', error_dP)
     print('second derivative error of Penalty is ', error_ddP)
 
-    #basis test
-    '''
-    xi = -1.0
-    B, dB, ddB = horizontalBeam.basis(xi,d = 2)
-    Bp, dBp = horizontalBeam.basis(xi + EPS,d = 1)
-    Bm, dBm = horizontalBeam.basis(xi - EPS,d = 1)
-    print('Basis test\n', Bp - Bm - 2*EPS*dB,'\n', dBp - dBm - 2*EPS*ddB)
-    '''
 
 
 
+
+
+
+
+
+if __name__ == "__main__":
+    test_derivative()
 
 
 
