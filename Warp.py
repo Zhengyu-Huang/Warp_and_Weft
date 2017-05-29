@@ -78,11 +78,11 @@ class Warp:
 
         E = 1.0e4
         r = 0.1
-        self.Coord = Coord = np.zeros([nDim, nNodes])
+        self.Coord = Coord = np.zeros([nDoF, nNodes])
         Coord[0,:] = np.linspace(0,1.0,nNodes)
 
         for e in range(nElements):
-            Xa0,Xb0 = np.array([Coord[0,e],Coord[1,e],0]),np.array([Coord[0,e+1],Coord[1,e+1],0])
+            Xa0,Xb0 = np.array([Coord[0,e],Coord[1,e],Coord[2,e]]),np.array([Coord[0,e+1],Coord[1,e+1],Coord[2,e]])
             elements.append(LinearEBBeam(Xa0, Xb0,E,r))
 
 
@@ -103,6 +103,55 @@ class Warp:
 
         #Penalty parameters
         self.wn = 1e8
+
+    def _sine_beam_data(self):
+        '''
+        g is dirichlet boundary condition
+        f is the internal force
+        '''
+        nDoF = self.nDoF
+        nDim = self.nDim
+
+
+
+
+        self.nElements = nElements = 5
+        self.elements = elements = []
+        self.nNodes = nNodes = self.nElements + 1
+        self.nEquations = self.nDoF * (self.nNodes - 1)
+
+        # Weft info
+        self.nWeft = nWeft = 1
+        self.wefts = wefts = np.zeros([nDim + 1, nWeft])  # (x,y,r)
+        wefts[:, 0] = 0.4, 0.22, 0.1
+
+        # Penalty parameters
+        self.wn = 1e8
+
+
+        E = 1.0e4
+        r = 0.1
+        #The curve is A*sin(w*(x - pi/2.0))
+        self.Coord = Coord = np.zeros([nDim, nNodes])
+        Coord[0, :] = np.linspace(0, 2*np.pi, nNodes)
+        Coord[1, :] = A*np.sin(w*(x - pi/2.0))
+        Coord[1, :] = A*w*np.cos(w*(x - pi/2.0))
+        for e in range(nElements):
+            Xa0,Xb0 = np.array([Coord[0,e],Coord[1,e],0]),np.array([Coord[0,e+1],Coord[1,e+1],0])
+            elements.append(LinearEBBeam(Xa0, Xb0,E,r))
+
+
+        # Essential bounary condition
+        self.g = np.zeros([nDoF, nNodes])
+        self.EBC = np.zeros([nDoF,nNodes],dtype='int')
+        self.EBC[:,0] = 1
+
+        # Force
+        fx,fy,m = 0.0,1, 0.0
+        self.f = np.zeros([nDoF, nNodes])
+        self.f[:, -1] = fx, fy, m
+
+
 
 
     def assembly(self,d):
