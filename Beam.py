@@ -23,10 +23,11 @@ class LinearEBBeam:
         # Initial condition
         self.Xa0 = Xa0
         self.Xb0 = Xb0
-
         # length
         self.L = L = np.sqrt((Xa0[0] - Xb0[0])**2 + (Xa0[1] - Xb0[1])**2)
+        # local coordinate rotation angle
         self.s,self.c = (Xb0[1] - Xa0[1])/L, (Xb0[0] - Xa0[0])/L
+
     def basis(self, xi,d=0):
         '''
         This is the physics of the problem
@@ -70,26 +71,7 @@ class LinearEBBeam:
 
     def stiffmatrix(self):
         '''
-        This is the physics of the problem
-        Local Basis
-        initial is x \in [0,L]
-        xi = 2x/L - 1 \in [-1,1]
-        N1 = (1 - xi)/2                 x translation
-        N2 = (1 - xi)^2*(2 + xi)/4      y translation
-        N3 =  L*(1 - xi)^2*(1 + xi)/8   y bending
-        N4 = (1 + xi)/2                 x translation
-        N5 =  (1 + xi)^2*(2 - xi)/4     y translation
-        N6 = -L*(1 + xi)^2*(1 - xi)/8   y bending
-        u_x = u1 N1 + u4 N4
-        u_x(-1) = u1,  u_x(1) = u4
-        u_y = u2 N2 + u3 N3 + u5 N5 + u6 N6
-        u_y(-1) = u2,  u_y(1) = u5, u_y'(-1) = u3*L/2, u_y'(1) =  u6*L/2,
-        return linear beam element's stiff matrix
-        :param E : Young's module
-        :param A : cross section area
-        :param I : moment inertial
-        :param Xa: start point at initial configuration
-        :param Xb: end point at initial configuration
+        return linear beam element's stiff matrix in the global coordinate
         '''
 
         L = self.L
@@ -114,14 +96,13 @@ class LinearEBBeam:
         [0,0,0,s,c,0],
         [0,0,0,0,0,1]])
         # stiff matrix in reference configuration is  R*K*R^T
-        return np.dot(R, np.dot(K,R.transpose()))
+        return np.dot(R, np.dot(K,R.T))
 
-    def _normal_in_local(self, d_, xi, side):
+    def _normal_in_local(self, d_, xi):
         '''
-        compute normal in global coordinate
+        compute left normal vector in the local coordinate
+        :param d_: 6 entries array, local displacement
         :param xi: local coordinate
-        :param side: -1 right normal, 1 left normal
-        :return:
         '''
 
         x0_ = np.array([0.,0.,self.Xa0[2], self.L, 0.,self.Xb0[2]]) #initial position in local coordinates
@@ -132,16 +113,15 @@ class LinearEBBeam:
 
         et_ = dxs_ / np.linalg.norm(dxs_)
 
-        en_ = side*np.array([-et_[1], et_[0]])
+        en_ = np.array([-et_[1], et_[0]])
 
         return en_
 
-    def _tangential_in_local(self, d_, xi, side):
+    def _tangential_in_local(self, d_, xi):
         '''
-        compute normal in global coordinate
+        compute tangential vector in the local coordinate(tangent is in  XaXb direction)
+        :param d_: 6 entries array, local displacement
         :param xi: local coordinate
-        :param side: -1 right normal, 1 left normal
-        :return:
         '''
 
         x0_ = np.array([0.,0.,self.Xa0[2], self.L, 0.,self.Xb0[2]]) #initial position in local coordinates
@@ -152,14 +132,14 @@ class LinearEBBeam:
 
         et_ = dxs_ / np.linalg.norm(dxs_)
 
-        return side*et_
+        return et_
 
 
 
 
     def _distance(self, d_ , xi,  xm_, side):
         '''
-        find the distance (xm0 - xs(xi))*en
+        find the distance (xm0 - xs(xi))*en*side
         :param xi: beam position parameter
         :param x0_: initial position
         :param d_ : displacement
@@ -202,16 +182,24 @@ class LinearEBBeam:
 
         return d_
 
-    def closest_points_distance(self,da,db,xm,rm,wn,side):
+    def penalty_term(self,da,db,xm,rm,wn,side):
         '''
-        compute the closest point distance in initial configuration, Xa is the original point
-        :param Xa: beam initial left node position x,y,theta
-        :param Xb: beam initial right node position x,y,theta
-        :param xa: beam current left node displacement x,y,theta
-        :param xb: beam current left node displacement x,y,theta
+        compute the closest point distance in initial configuration, gn is the signed distance
+        gn = side*(xm -xs)*en
+        :param da: beam current left node displacement x,y,theta
+        :param db: beam current left node displacement x,y,theta
         :param xm: rigid master node position
-        :param side: master node should on the side(-1 right 1 left) of the beam
-        :return: gn
+        :param side: master node should on the side(1 left -1 right) of the beam
+        if side = 1, left is positive right is the wall
+        if side = -1, right is positive, left is the wall
+        :return: bool: true, find contact, false not find
+                 a tuple, including penalty function information
+                    P: 1/2*wn*(gn - rm - r)**2 if gn - rm -r <0  else 0
+                    f: contact force dP if P > 0
+                    K: Hessian matrix ddP, if P > 0
+                 a tuple, including contact point information
+                    xi_c: closest node local coordinate
+                    gn: signed distance
         '''
         Xa0, Xb0, L = self.Xa0, self.Xb0, self.L
         s,c = (Xb0[1] - Xa0[1])/L, (Xb0[0] - Xa0[0])/L
@@ -261,14 +249,15 @@ class LinearEBBeam:
         #compute contact force
 
         gn = self._distance(d_, xi_c,xm_,side)
+        P = wn*(gn - rm - self.r)**2/2.0
 
         if(gn < rm + self.r):
             #compute normal penalty force in local coordinate
             #f = -wm*gn*en
-            en_ = self._normal_in_local(d_, xi_c, side)
-            et_ = self._tangential_in_local(d_, xi_c, side)
+            en_ = self._normal_in_local(d_, xi_c)
+            et_ = self._tangential_in_local(d_, xi_c)
             B,dB,ddB = self.basis(xi_c,d = 2)
-            f_ = - wn * (gn - rm - self.r)*np.dot(en_, B)
+            f_ = - wn * (gn - rm - self.r)*np.dot(en_, B)*side
 
 
             #compute Kn_
@@ -279,7 +268,7 @@ class LinearEBBeam:
 
             enTB_ = np.dot(en_, B)
 
-            K_ = wn*(np.outer(enTB_, enTB_) - (gn- rm - self.r)*(np.dot(B.T ,den_) + np.outer(np.dot(en_,dB), dxi_))) # 6 by 6
+            K_ = wn*(np.outer(enTB_, enTB_) - side*(gn- rm - self.r)*(np.dot(B.T ,den_) + np.outer(np.dot(en_,dB), dxi_))) # 6 by 6
 
 
             R = np.array([[c, -s, 0,0,0,0],
@@ -290,10 +279,11 @@ class LinearEBBeam:
                           [0,0,0,0,0,1]])
             f = np.dot(R,f_)
             K = np.dot(R, np.dot(K_, R.T))
-            return xi_c, gn ,f, K
+            return True, (P ,f, K), (xi_c, gn)
 
         else:
-            print('distance is ',gn)
+            return False, (), ()
+
 
     def visualize(self,da,db,k = 2, fig = 1):
         Xa0, Xb0 = self.Xa0, self.Xb0
@@ -354,23 +344,25 @@ def test_visualization():
 
 def test_derivative():
     Xa0 = np.array([0.0,0.0,0.0])
-    Xb0 = np.array([1.0,1.0,0.0])
+    Xb0 = np.array([1.0,0.0,0.0])
     E = 1.0
     r = 0.1
     myBeam = LinearEBBeam(Xa0, Xb0, E, r)
-    d = np.array([0.2, 0.3, 0.1, 0.2, 0.5, 0.5])
+    d = np.array([0.0, 0.3, 0.1, 0.0, 0.5, 0.5])
     da = d[0:3]
     db = d[3:6]
 
     myBeam.visualize(da,db, k = 10,fig = 1)
     plt.show()
 
-    xm = np.array([0.6, 0.5])
+    xm = np.array([2.5, 0.5])
     side = 1
     wn = 1.0
-    xi_c, gn ,f, K = myBeam.closest_points_distance(da, db, xm, r, wn, side)
-
-
+    success, penalty, info  = myBeam.penalty_term(da, db, xm, r, wn, side)
+    if not success:
+        return
+    P, f, K = penalty
+    print('contact point local coordinate is', info[0], 'signed distance is ', info[1])
 
     EPS= 0.01
 
@@ -384,17 +376,20 @@ def test_derivative():
     dap = dp[0:3]
     dbp = dp[3:6]
 
-    xi_cp, gnp ,fp, Kp = myBeam.closest_points_distance(dap,dbp,xm,r, wn, side)
-
+    success, penalty_p, info_p = myBeam.penalty_term(dap,dbp,xm,r, wn, side)
+    if not success:
+        return
+    Pp, fp, Kp = penalty_p
 
     dm = d - eps
     dam = dm[0:3]
     dbm = dm[3:6]
-    xi_cm, gnm ,fm, Km = myBeam.closest_points_distance(dam,dbm,xm,r, wn, side)
+    success, penalty_m, info_m = myBeam.penalty_term(dam,dbm,xm,r, wn, side)
+    if not success:
+        return
+    Pm, fm, Km = penalty_m
 
-
-
-    error_dP = (wn*(gnp - 2*r)**2/2.0) - (wn*(gnm-2*r)**2/2.0) - np.dot(f, dp-dm)
+    error_dP =  Pp -Pm - np.dot(f, dp-dm)
     error_ddP = fp - fm - np.dot(K,dp-dm)
 
     np.set_printoptions(precision=16)
