@@ -78,7 +78,6 @@ class LinearEBBeam:
         I = self.I
         E = self.E
         A = self.A
-        Xa0, Xb0 = self.Xa0, self.Xb0
 
         #stiffness matrix in initial configuration
         K = np.array([[E*A/L,   0,          0,                -E*A/L,            0,             0],
@@ -88,7 +87,7 @@ class LinearEBBeam:
                            [0,      -12*E*I/L**3, -6*E*I/L**2,   0    ,   12*E*I/L**3,    -6*E*I/L**2],
                            [0,      6*E*I/L**2,   2*E*I/L,       0,       -6*E*I/L**2,     4*E*I/L]])
 
-        s,c = (Xb0[1] - Xa0[1])/L, (Xb0[0] - Xa0[0])/L
+        s,c = self.s, self.c
         R = np.array([[c, -s, 0,0,0,0],
         [s,c,0,0,0,0],
         [0,0,1,0,0,0],
@@ -292,16 +291,19 @@ class LinearEBBeam:
             return False, (), ()
 
 
-    def visualize(self,da,db,k = 2, fig = 1):
+    def visualize(self,da,db,k = 2, fig = 0):
         Xa0, Xb0 = self.Xa0, self.Xb0
         X0 = np.vstack([np.linspace(Xa0[0],Xb0[0],k),np.linspace(Xa0[1],Xb0[1],k)])
         #plot initial configuration
         da0,db0 = np.array([0,0,Xa0[-1]]), np.array([0,0,Xb0[-1]])
         u0 = self.visualize_helper(da0,db0,k)
-        plt.figure(fig)
-        plt.plot(X0[0,:]+u0[0,:],X0[1,:]+u0[1,:],label='ref')
         u = self.visualize_helper(da,db,k)
-        plt.plot(X0[0,:]+u[0,:],X0[1,:]+u[1,:],label='current')
+        if(fig > 0):
+            plt.figure(fig)
+            plt.plot(X0[0,:]+u0[0,:],X0[1,:]+u0[1,:],label='ref')
+            plt.plot(X0[0,:]+u[0,:],X0[1,:]+u[1,:],label='current')
+        return X0 + u0, X0 + u
+
 
 
 

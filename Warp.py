@@ -14,7 +14,7 @@ class Warp:
                     nNodesElement   Number of nodes per element
                     nDoF            Number of DoF per node
                     nEquations      Number of equations to solve
-                    Coord           Array of nodal coordinates
+                    elements        list contains nElements beam element class
                     ID              Array of global eq. numbers, destination array (ID)
                     EBC             EBC = 1 if DOF is on Essential B.C.
                     IEN             Array of global node numbers
@@ -24,6 +24,12 @@ class Warp:
                     g               Essential B.C. Value at each node is an array(nDoF, nNodes)
                     h               Natural B.C. Value at each node
         '''
+
+        self.nDim = nDim = 2
+        self.nDoF = nDoF = 3
+        self.nNodesElement = 2
+
+        #build elements
         self.type = type
         if(type == 'horizontal beam'):
             self._horizontal_beam_data()
@@ -59,32 +65,26 @@ class Warp:
         g is dirichlet boundary condition
         f is the internal force
         '''
+        nDoF = self.nDoF
+        nDim = self.nDim
 
-        self.nDim = nDim = 2
-        self.nDoF = nDoF = 3
-        self.nNodesElement = 2
 
-        self.nElements = nElements = 100
 
+
+        self.nElements = nElements = 5
+        self.elements = elements = []
         self.nNodes = nNodes = self.nElements + 1
         self.nEquations = self.nDoF * (self.nNodes - 1)
 
+        E = 1.0
+        r = 1.0
+        self.Coord = Coord = np.zeros([nDim, nNodes])
+        Coord[0,:] = np.linspace(0,1.0,nNodes)
 
-        # Young's module
-        self.E = np.empty(nElements)
-        self.E.fill(1.0)
+        for e in range(nElements):
+            Xa0,Xb0 = np.array([Coord[0,e],Coord[1,e],0]),np.array([Coord[0,e+1],Coord[1,e+1],0])
+            elements.append(LinearEBBeam(Xa0, Xb0,E,r))
 
-        # Cross section area
-        self.A = np.empty(nElements)
-        self.A.fill(1.0)
-
-        # Moment inertial
-        self.I = np.empty(nElements)
-        self.I.fill(1.0)
-
-        # Initial condition
-        self.Coord = np.zeros([nDim,nNodes])
-        self.Coord[0,:] = np.linspace(0,1.0,nNodes)
 
         # Essential bounary condition
         self.g = np.zeros([nDoF, nNodes])
@@ -93,49 +93,6 @@ class Warp:
 
         # Force
         fx,fy,m = 0.0,1, 0.0
-        self.f = np.zeros([nDoF, nNodes])
-        self.f[:, -1] = fx, fy, m
-
-    def _slanting_beam_data(self):
-        '''
-        g is dirichlet boundary condition
-        f is the internal force
-        '''
-
-        self.nDim = nDim = 2
-        self.nDoF = nDoF = 3
-        self.nNodesElement = 2
-
-        self.nElements = nElements = 100
-
-        self.nNodes = nNodes = self.nElements + 1
-        self.nEquations = self.nDoF * (self.nNodes - 1)
-
-
-        # Young's module
-        self.E = np.empty(nElements)
-        self.E.fill(1.0)
-
-        # Cross section area
-        self.A = np.empty(nElements)
-        self.A.fill(1.0)
-
-        # Moment inertial
-        self.I = np.empty(nElements)
-        self.I.fill(1.0)
-
-        # Initial condition
-        self.Coord = np.empty([nDim,nNodes])
-        self.Coord[0,:] = np.linspace(0, np.sqrt(2)/2.0, nNodes)
-        self.Coord[1,:] = np.linspace(0, np.sqrt(2)/2.0, nNodes)
-
-        # Essential bounary condition
-        self.g = np.zeros([nDoF, nNodes])
-        self.EBC = np.zeros([nDoF,nNodes],dtype='int')
-        self.EBC[:,0] = 1
-
-        # Force
-        fx,fy,m = np.sqrt(2)/2.0, np.sqrt(2)/2.0, 0.0
         self.f = np.zeros([nDoF, nNodes])
         self.f[:, -1] = fx, fy, m
 
@@ -181,8 +138,8 @@ class Warp:
         g = self.g
         f = self.f
         IEM = self.IEM
-        E,A,I,Xa,Xb = self.E[e],self.A[e],self.I[e],self.Coord[:,IEM[0,e]],self.Coord[:,IEM[1,e]]
-        k_e = LinearBeamStiffMatrix(E,A,I,Xa,Xb)
+        ele = self.elements[e]
+        k_e = ele.stiffmatrix()
 
         #Point force
         f_e = np.reshape(f[:,IEM[:,e]], (nNodesElement*nDoF,1), order='F')
@@ -210,23 +167,40 @@ class Warp:
     def fem_calc(self):
         K,F = self.assembly()
         d = np.linalg.solve(K,F)
-        print(F,d)
-        self.visualize_result(d,False)
-    def visualize_result(self, d, highOrder = True):
+        return d
+
+    def visualize_result(self, d, k=2):
+        '''
+        :param d: displacement of all freedoms
+        :param k: visualize points for each beam elements
+        '''
         ID = self.ID
+        nDim = self.nDim
         nNodes = self.nNodes
-        nElements = self.nEquations
+        nDoF = self.nDoF
+        nElements = self.nElements
+        elements = self.elements
         EBC = self.EBC
         g = self.g
-        x,y = np.empty(nNodes),np.empty(nNodes)
+        disp = np.empty([nDoF, nNodes])
 
         for i in range(nNodes):
-            x[i] = self.Coord[0, i]  +  d[ID[0,i]] if EBC[0,i] == 0 else g[0,i]
-            y[i] = self.Coord[1, i]  +  d[ID[1,i]] if EBC[1,i] == 0 else g[1,i]
+            for j in range(nDoF):
+                disp[j,i] = d[ID[j,i]] if EBC[j,i] == 0 else g[j,i]
 
-        plt.plot(x,y,'-o',label='solution')
-        plt.plot(self.Coord[0,:], self.Coord[1,:],'-o', label='reference')
-        print(d[[2,5,8]])
+        coord_ref, coord_cur =  np.empty([nDim,(k - 1)*nElements + 1]), np.empty([nDim,(k - 1)*nElements + 1])
+        for e in range(nElements):
+            ele = elements[e]
+            X0 , X = ele.visualize(disp[:,e],disp[:,e+1], k, fig = 0)
+            coord_ref[:, (k-1)*e:(k-1)*(e+1) + 1] = X0
+            coord_cur[:, (k-1)*e:(k-1)*(e+1) + 1] = X
+
+
+
+
+        plt.plot(coord_ref[0,:], coord_ref[1,:], '-o', label='ref')
+        plt.plot(coord_cur[0,:], coord_cur[1,:],'-o', label='current')
+
         plt.xlabel('x')
         plt.ylabel('y')
         plt.legend()
@@ -236,7 +210,8 @@ class Warp:
 
 
 if __name__ == "__main__":
-    warp = Warp('slanting beam')
+    warp = Warp('horizontal beam')
     #warp.assembly()
-    warp.fem_calc()
+    d = warp.fem_calc()
+    warp.visualize_result(d,2)
 
