@@ -76,8 +76,8 @@ class Warp:
         self.nNodes = nNodes = self.nElements + 1
         self.nEquations = self.nDoF * (self.nNodes - 1)
 
-        E = 1.0
-        r = 1.0
+        E = 1.0e4
+        r = 0.1
         self.Coord = Coord = np.zeros([nDim, nNodes])
         Coord[0,:] = np.linspace(0,1.0,nNodes)
 
@@ -96,19 +96,42 @@ class Warp:
         self.f = np.zeros([nDoF, nNodes])
         self.f[:, -1] = fx, fy, m
 
-    def assembly(self):
+        # Weft info
+        self.nWeft = nWeft = 1
+        self.wefts = wefts = np.zeros([nDim+1, nWeft]) # (x,y,r)
+        wefts[:,0] = 0.3,0.22,0.1
+
+        #Penalty parameters
+        self.wn = 1e8
+
+
+    def assembly(self,d):
+        '''
+        :param u: displacement of all freedoms
+        :return: dPi and Pi
+        Pi = Ku - F + \sum f_c^i
+        dPi = K + \sum df_c^i
+        '''
 
         #Step 1: Access required global variables
+        nNodes = self.nNodes
         nElements = self.nElements
         nEquations = self.nEquations
         nDoF = self.nDoF
+        nWeft = self.nWeft
         ID = self.ID
         LM = self.LM
+        EBC = self.EBC
+        g = self.g
+        elements = self.elements
+        wn = self.wn
+        wefts = self.wefts
 
 
-        #Step 2: Allocate K and F
+        #Step 2: Allocate K,  F,  dP and ddP
         K = np.zeros([nEquations,nEquations])
-        F = np.zeros([nEquations,1]);
+        F = np.zeros(nEquations);
+
 
         #Step 3: Assemble K and F
 
@@ -126,7 +149,48 @@ class Warp:
             K[np.ix_(P,P)] += k_e[np.ix_(I,I)]
             F[P] += f_e[I] + f_g[I]
 
-        return K,F
+
+
+
+        disp = np.empty([nDoF, nNodes])
+
+        for i in range(nNodes):
+            for j in range(nDoF):
+                disp[j,i] = d[ID[j,i]] if EBC[j,i] == 0 else g[j,i]
+
+        #Step 4: Allocate dP and ddP
+        dP = np.zeros(nEquations)
+        ddP = np.zeros([nEquations,nEquations])
+
+        #todo only handle the closest point!
+        for e in range(nElements):
+            ele = elements[e]
+            da,db = disp[:,e],disp[:,e+1]
+            for i in range(nWeft):
+                xm, rm = wefts[0:2,i], wefts[2,i]
+                contact, penalty, info = ele.penalty_term(da,db,xm,rm,wn)
+                if(contact):
+                    print('contact elem ',e,' local coordinate is ', info[0], 'distance is ', info[1], ' side is ',info[2])
+                    _, f_contact, k_contact = penalty
+
+                    #Step 3b: Get Global equation numbers
+                    P = LM[:,e]
+
+                    #Step 3c: Eliminate Essential DOFs
+                    I = (P >= 0);
+                    P = P[I];
+
+                    #Step 3d: Insert k_e, f_e, f_g, f_h
+                    ddP[np.ix_(P,P)] += k_contact[np.ix_(I,I)]
+                    dP[P] += f_contact[I]
+
+
+        print('F', F)
+        print('dP', dP)
+        dPi = np.dot(K,d) - F + dP
+        ddPi = K + ddP
+
+        return dPi, ddPi
 
     def _linear_beam_arrays(self,e):
         '''
@@ -142,31 +206,45 @@ class Warp:
         k_e = ele.stiffmatrix()
 
         #Point force
-        f_e = np.reshape(f[:,IEM[:,e]], (nNodesElement*nDoF,1), order='F')
+        f_e = np.reshape(f[:,IEM[:,e]], (nNodesElement*nDoF), order='F')
 
         #Dirichlet boundary
-        g_e = np.reshape(g[:,IEM[:,e]], (nNodesElement*nDoF,1), order='F')
+        g_e = np.reshape(g[:,IEM[:,e]], (nNodesElement*nDoF), order='F')
         f_g = -np.dot(k_e,g_e)
 
         return k_e, f_e, f_g
 
-    def _closest_node(self, xm):
-        '''
-        find the closest node on the beams
-        :param xm: master node
-        :return: g_n, f_n, K_n
-        '''
-        nNodes = self.nNodes
-        nElements = self.nElements
-        for e in range(nElements):
-            return
 
 
 
 
     def fem_calc(self):
-        K,F = self.assembly()
-        d = np.linalg.solve(K,F)
+        nEquations = self.nEquations
+
+        d = np.zeros(nEquations)
+
+        dPi,ddPi = self.assembly(d)
+
+        res0 = np.linalg.norm(dPi)
+
+        MAXITE = 10000
+        EPS = 1e-8
+        found = False
+        alpha = 0.1
+        for ite in range(MAXITE):
+
+            dPi,ddPi = self.assembly(d)
+            d =  d - alpha*np.linalg.solve(ddPi,dPi)
+
+            res = np.linalg.norm(dPi)
+            print('In fem_calc res is', res)
+            if(res < EPS or res < EPS*res0):
+                found = True
+                break
+
+        if(not found):
+            print("Newton cannot converge in fem_calc")
+
         return d
 
     def visualize_result(self, d, k=2):

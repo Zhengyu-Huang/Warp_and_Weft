@@ -244,10 +244,11 @@ class LinearEBBeam:
 
 
         if(xi_c > 1 or xi_c < -1 or not found):
-            print("found closest points but xi_c is", xi_c)
+
             dist_a,_ = self._distance(d_, -1.0, xm_)
             dist_b,_ = self._distance(d_,  1.0, xm_)
             xi_c = -1.0 if(dist_a < dist_b) else 1.0
+            #print("found closest points but xi_c is", xi_c, 'distance is ', min(dist_a, dist_b))
 
 
 
