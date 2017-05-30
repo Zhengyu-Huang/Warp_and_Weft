@@ -150,7 +150,7 @@ class Warp:
         self.wefts = np.zeros([nDim + 1, nWeft])  # (x,y,r)
 
         # Penalty parameters
-        self.wn = 1e6
+        self.wn = 1e7
 
 
 
