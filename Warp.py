@@ -33,8 +33,8 @@ class Warp:
         self.type = type
         if(type == 'horizontal beam'):
             self._horizontal_beam_data()
-        elif(type == 'slanting beam'):
-            self._slanting_beam_data()
+        elif(type == 'sine beam'):
+            self._sine_beam_data()
 
 
 
@@ -115,30 +115,39 @@ class Warp:
 
 
 
-        self.nElements = nElements = 5
+        self.nElements = nElements = 10
         self.elements = elements = []
         self.nNodes = nNodes = self.nElements + 1
         self.nEquations = self.nDoF * (self.nNodes - 1)
 
+
+
+        #Young's module
+        E = 1.0e8
+        #beam radius
+        r = 0.02
+        #The curve is h*sin(k*x - pi/2.0)
+        k = 1
+        h = 0.1
+        self.Coord = Coord = np.zeros([nDoF, nNodes])
+        Coord[0, :] = np.linspace(0, 2*np.pi, nNodes)         # x
+        Coord[1, :] = h*np.sin(k*Coord[0, :] - np.pi/2.0) + h   # y
+        Coord[2, :] = h*k*np.cos(k*Coord[0, :] - np.pi/2.0) # rotation theta
+        for e in range(nElements):
+            Xa0,Xb0 = np.array([Coord[0,e],Coord[1,e],Coord[2, e]]),np.array([Coord[0,e+1],Coord[1,e+1], Coord[2, e+1]])
+            elements.append(LinearEBBeam(Xa0, Xb0,E,r))
+
         # Weft info
-        self.nWeft = nWeft = 1
+        rWeft = r
+        self.nWeft = nWeft = 2*k-1
         self.wefts = wefts = np.zeros([nDim + 1, nWeft])  # (x,y,r)
-        wefts[:, 0] = 0.4, 0.22, 0.1
+        for i in range(nWeft):
+            wefts[:,i] = np.pi*(i+1.0)/k, h, rWeft
+
 
         # Penalty parameters
         self.wn = 1e8
 
-
-        E = 1.0e4
-        r = 0.1
-        #The curve is A*sin(w*(x - pi/2.0))
-        self.Coord = Coord = np.zeros([nDim, nNodes])
-        Coord[0, :] = np.linspace(0, 2*np.pi, nNodes)
-        Coord[1, :] = A*np.sin(w*(x - pi/2.0))
-        Coord[1, :] = A*w*np.cos(w*(x - pi/2.0))
-        for e in range(nElements):
-            Xa0,Xb0 = np.array([Coord[0,e],Coord[1,e],0]),np.array([Coord[0,e+1],Coord[1,e+1],0])
-            elements.append(LinearEBBeam(Xa0, Xb0,E,r))
 
 
         # Essential bounary condition
@@ -147,7 +156,7 @@ class Warp:
         self.EBC[:,0] = 1
 
         # Force
-        fx,fy,m = 0.0,1, 0.0
+        fx,fy,m = 0.0, -0.1, 0.0
         self.f = np.zeros([nDoF, nNodes])
         self.f[:, -1] = fx, fy, m
 
@@ -223,6 +232,7 @@ class Warp:
                 contact, penalty, info = ele.penalty_term(da, db, xm, rm, wn)
                 if (contact and info[1] < g_min):
                     closest_e, g_min = e, info[1]
+
 
 
             if (closest_e >= 0):
@@ -347,7 +357,7 @@ class Warp:
 
 
 if __name__ == "__main__":
-    warp = Warp('horizontal beam')
+    warp = Warp('sine beam')
     #warp.assembly()
     d = warp.fem_calc()
     warp.visualize_result(d,2)
