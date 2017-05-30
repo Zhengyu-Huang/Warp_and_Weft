@@ -2,7 +2,7 @@ import numpy as np
 import matplotlib.pyplot as plt
 
 class LinearEBBeam:
-    def __init__(self,Xa0, Xb0,E,r):
+    def __init__(self,id, Xa0, Xb0,E,r):
         '''
         :param Xa: initial position, x_a, y_a, theta_a
         :param Xb: initial position, x_b, y_b, theta_b
@@ -10,6 +10,8 @@ class LinearEBBeam:
         :param r: radius
         :return:
         '''
+        #element id
+        self.id = id
         # Young's module
         self.E = E
         # radius
@@ -218,6 +220,22 @@ class LinearEBBeam:
         x0_ = np.array([0.,0.,Xa0[2], L, 0.,Xb0[2]]) #initial position of the master node
         #compute closest points by Newton iteration
 
+        #####################################
+        # Roughly estimate the distance, if d_lower_bound > rm + self.r , return false, (), ()
+        #####################################
+        bounding_box = np.array([[d_[0],d_[3] + L],
+                        [min(d_[1],0.0) + min(d_[4],0.0) + min((d_[2] + Xa0[2])*4.0*L/27.0,0.0) +
+                         min(-(d_[5]+Xb0[2])*4.0*L/27.0, 0.0),
+                        max(d_[1],0.0) + max(d_[4],0.0) + max((d_[2]+Xa0[2])*4.0*L/27.0,0.0) +
+                        max(-(d_[5]+Xb0[2])*4.0*L/27.0, 0.0)]])
+        bounding_box_c = np.array([(bounding_box[0,0] + bounding_box[0,1])/2.0, (bounding_box[1,0] + bounding_box[1,1])/2.0])
+        bounding_box_r = np.sqrt(((bounding_box[0,0] - bounding_box[0,1])/2.0)**2 + ((bounding_box[1,0] - bounding_box[1,1])/2.0)**2)
+        dist_lower_bound = np.linalg.norm(xm_ - bounding_box_c) - bounding_box_r
+        if(dist_lower_bound > rm + self.r):
+            return False, (), ()
+
+
+
         MAXITE = 50
         EPS = 1e-14
         xi_c = 0.5
@@ -238,7 +256,7 @@ class LinearEBBeam:
                 break
 
         if(not found):
-            print("Newton cannot converge in finding closest points")
+            print('element ', self.id, ' newton cannot converge in finding closest points')
 
 
 

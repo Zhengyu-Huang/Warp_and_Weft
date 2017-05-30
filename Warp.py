@@ -31,8 +31,10 @@ class Warp:
 
         #build elements
         self.type = type
-        if(type == 'horizontal beam'):
-            self._horizontal_beam_data()
+        if(type == 'straight beam'):
+            self._straight_beam_data()
+        elif(type == 'sine beam0'):
+            self._sine_beam_data0()
         elif(type == 'sine beam'):
             self._sine_beam_data()
 
@@ -60,7 +62,7 @@ class Warp:
 
 
 
-    def _horizontal_beam_data(self):
+    def _straight_beam_data(self):
         '''
         g is dirichlet boundary condition
         f is the internal force
@@ -80,10 +82,10 @@ class Warp:
         r = 0.1
         self.Coord = Coord = np.zeros([nDoF, nNodes])
         Coord[0,:] = np.linspace(0,1.0,nNodes)
-
+        Coord[1,:] = np.linspace(0,1.0,nNodes)
         for e in range(nElements):
             Xa0,Xb0 = np.array([Coord[0,e],Coord[1,e],Coord[2,e]]),np.array([Coord[0,e+1],Coord[1,e+1],Coord[2,e]])
-            elements.append(LinearEBBeam(Xa0, Xb0,E,r))
+            elements.append(LinearEBBeam(e, Xa0, Xb0,E,r))
 
 
         # Essential bounary condition
@@ -104,7 +106,7 @@ class Warp:
         #Penalty parameters
         self.wn = 1e8
 
-    def _sine_beam_data(self):
+    def _sine_beam_data0(self):
         '''
         g is dirichlet boundary condition
         f is the internal force
@@ -123,7 +125,7 @@ class Warp:
 
 
         #Young's module
-        E = 1.0e8
+        E = 1.0e9
         #beam radius
         self.r = r = 0.02
         #The curve is h*sin(k*x - pi/2.0)
@@ -135,7 +137,60 @@ class Warp:
         Coord[2, :] = h*k*np.cos(k*Coord[0, :] - np.pi/2.0) # rotation theta
         for e in range(nElements):
             Xa0,Xb0 = np.array([Coord[0,e],Coord[1,e],Coord[2, e]]),np.array([Coord[0,e+1],Coord[1,e+1], Coord[2, e+1]])
-            elements.append(LinearEBBeam(Xa0, Xb0,E,r))
+            elements.append(LinearEBBeam(e,Xa0, Xb0,E,r))
+
+        # no wefts
+
+        self.nWeft = nWeft = 0
+        self.wefts = np.zeros([nDim + 1, nWeft])  # (x,y,r)
+
+        # Penalty parameters
+        self.wn = 1e6
+
+
+
+        # Essential bounary condition
+        self.g = np.zeros([nDoF, nNodes])
+        self.EBC = np.zeros([nDoF,nNodes],dtype='int')
+        self.EBC[:,0] = 1
+
+        # Force
+        fx,fy,m = 10.0, -0.0, 0.0
+        self.f = np.zeros([nDoF, nNodes])
+        self.f[:, -1] = fx, fy, m
+
+    def _sine_beam_data(self):
+        '''
+        g is dirichlet boundary condition
+        f is the internal force
+        '''
+        nDoF = self.nDoF
+        nDim = self.nDim
+
+
+
+
+        self.nElements = nElements = 100
+        self.elements = elements = []
+        self.nNodes = nNodes = self.nElements + 1
+        self.nEquations = self.nDoF * (self.nNodes - 1)
+
+
+
+        #Young's module
+        E = 1.0e9
+        #beam radius
+        self.r = r = 0.02
+        #The curve is h*sin(k*x - pi/2.0)
+        k = 3
+        h = 0.1
+        self.Coord = Coord = np.zeros([nDoF, nNodes])
+        Coord[0, :] = np.linspace(0, 2*np.pi, nNodes)         # x
+        Coord[1, :] = h*np.sin(k*Coord[0, :] - np.pi/2.0) + h   # y
+        Coord[2, :] = h*k*np.cos(k*Coord[0, :] - np.pi/2.0) # rotation theta
+        for e in range(nElements):
+            Xa0,Xb0 = np.array([Coord[0,e],Coord[1,e],Coord[2, e]]),np.array([Coord[0,e+1],Coord[1,e+1], Coord[2, e+1]])
+            elements.append(LinearEBBeam(e, Xa0, Xb0,E,r))
 
         # Weft info
         rWeft = r
@@ -156,7 +211,7 @@ class Warp:
         self.EBC[:,0] = 1
 
         # Force
-        fx,fy,m = 0.0, -0.1, 0.0
+        fx,fy,m = 0.1, -0.2, 0.0
         self.f = np.zeros([nDoF, nNodes])
         self.f[:, -1] = fx, fy, m
 
@@ -237,10 +292,12 @@ class Warp:
 
 
             if (closest_e >= 0):
-                print('Weft ', i , ' contacts element', closest_e)
+
                 ele = elements[closest_e]
                 da, db = disp[:, closest_e], disp[:, closest_e + 1]
                 contact, penalty, info = ele.penalty_term(da, db, xm, rm, wn)
+                print('Weft ', i , ' contacts element', closest_e, ' local coordinate is ',
+                      info[0], ' distance is ', info[1], ' side is ',info[2])
                 #print('closest_e is ' , closest_e, 'info is ', info,' penalty is ', penalty)
                 _, f_contact, k_contact = penalty
                 # Step 3b: Get Global equation numbers
@@ -298,11 +355,12 @@ class Warp:
 
         res0 = np.linalg.norm(dPi)
 
-        MAXITE = 10000
+        MAXITE = 800
         EPS = 1e-8
         found = False
         dt_max = 0.5
         for ite in range(MAXITE):
+
 
             dPi,ddPi = self.assembly(u)
 
@@ -312,7 +370,10 @@ class Warp:
 
             dt = min(dt_max, self.r/du_max)
 
-            u =  u - dt*np.linalg.solve(ddPi,dPi)
+            u =  u - dt*du
+
+            #print('dPi ', np.reshape(dPi,(3,-1),order='F'))
+            #print('du is ', np.reshape(du,(3,-1),order='F'))
 
             res = np.linalg.norm(dPi)
             print('Ite/MAXITE: ', ite, ' /', MAXITE, 'In fem_calc res is', res)
