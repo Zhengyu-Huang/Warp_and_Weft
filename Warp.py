@@ -125,9 +125,9 @@ class Warp:
         #Young's module
         E = 1.0e8
         #beam radius
-        r = 0.02
+        self.r = r = 0.02
         #The curve is h*sin(k*x - pi/2.0)
-        k = 1
+        k = 2
         h = 0.1
         self.Coord = Coord = np.zeros([nDoF, nNodes])
         Coord[0, :] = np.linspace(0, 2*np.pi, nNodes)         # x
@@ -146,7 +146,7 @@ class Warp:
 
 
         # Penalty parameters
-        self.wn = 1e8
+        self.wn = 1e6
 
 
 
@@ -221,24 +221,27 @@ class Warp:
         ddP = np.zeros([nEquations,nEquations])
 
         #Setp 5: Assemble K and F
-        closest_e = -1
+
         g_min = np.inf
 
         for i in range(nWeft):
             xm, rm = wefts[0:2, i], wefts[2, i]
+            closest_e = -1
             for e in range(nElements):
                 ele = elements[e]
                 da, db = disp[:, e], disp[:, e + 1]
                 contact, penalty, info = ele.penalty_term(da, db, xm, rm, wn)
                 if (contact and info[1] < g_min):
                     closest_e, g_min = e, info[1]
-
+                    #print('closest_e is ' , closest_e, 'g_min is ', g_min,' penalty is ', penalty)
 
 
             if (closest_e >= 0):
+                print('Weft ', i , ' contacts element', closest_e)
                 ele = elements[closest_e]
                 da, db = disp[:, closest_e], disp[:, closest_e + 1]
                 contact, penalty, info = ele.penalty_term(da, db, xm, rm, wn)
+                #print('closest_e is ' , closest_e, 'info is ', info,' penalty is ', penalty)
                 _, f_contact, k_contact = penalty
                 # Step 3b: Get Global equation numbers
                 P = LM[:, closest_e]
@@ -287,23 +290,32 @@ class Warp:
     def fem_calc(self):
         nEquations = self.nEquations
 
-        d = np.zeros(nEquations)
+        nDoF = self.nDoF
 
-        dPi,ddPi = self.assembly(d)
+        u = np.zeros(nEquations)
+
+        dPi,ddPi = self.assembly(u)
 
         res0 = np.linalg.norm(dPi)
 
         MAXITE = 10000
         EPS = 1e-8
         found = False
-        alpha = 0.05
+        dt_max = 0.5
         for ite in range(MAXITE):
 
-            dPi,ddPi = self.assembly(d)
-            d =  d - alpha*np.linalg.solve(ddPi,dPi)
+            dPi,ddPi = self.assembly(u)
+
+            du = np.linalg.solve(ddPi,dPi)
+
+            du_max = np.max(np.sqrt(du[0:-1:nDoF]**2 + du[1:-1:nDoF]**2))
+
+            dt = min(dt_max, self.r/du_max)
+
+            u =  u - dt*np.linalg.solve(ddPi,dPi)
 
             res = np.linalg.norm(dPi)
-            print('In fem_calc res is', res)
+            print('Ite/MAXITE: ', ite, ' /', MAXITE, 'In fem_calc res is', res)
             if(res < EPS or res < EPS*res0):
                 found = True
                 break
@@ -311,9 +323,9 @@ class Warp:
         if(not found):
             print("Newton cannot converge in fem_calc")
 
-        return d
+        return u
 
-    def visualize_result(self, d, k=2):
+    def visualize_result(self, u, k=2):
         '''
         :param d: displacement of all freedoms
         :param k: visualize points for each beam elements
@@ -330,7 +342,7 @@ class Warp:
 
         for i in range(nNodes):
             for j in range(nDoF):
-                disp[j,i] = d[ID[j,i]] if EBC[j,i] == 0 else g[j,i]
+                disp[j,i] = u[ID[j,i]] if EBC[j,i] == 0 else g[j,i]
 
         coord_ref, coord_cur =  np.empty([nDim,(k - 1)*nElements + 1]), np.empty([nDim,(k - 1)*nElements + 1])
         for e in range(nElements):
