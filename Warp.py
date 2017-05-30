@@ -61,6 +61,11 @@ class Warp:
                     self.LM[j*self.nDoF + i, k] = self.ID[i,self.IEM[j,k]]
 
 
+        #contact information
+        self.contact_dist = contact_info = np.empty(self.nElements)
+
+
+
 
     def _straight_beam_data(self):
         '''
@@ -117,7 +122,7 @@ class Warp:
 
 
 
-        self.nElements = nElements = 10
+        self.nElements = nElements = 100
         self.elements = elements = []
         self.nNodes = nNodes = self.nElements + 1
         self.nEquations = self.nDoF * (self.nNodes - 1)
@@ -125,11 +130,11 @@ class Warp:
 
 
         #Young's module
-        E = 1.0e9
+        E = 1.0e8
         #beam radius
         self.r = r = 0.02
         #The curve is h*sin(k*x - pi/2.0)
-        k = 2
+        k = 3
         h = 0.1
         self.Coord = Coord = np.zeros([nDoF, nNodes])
         Coord[0, :] = np.linspace(0, 2*np.pi, nNodes)         # x
@@ -155,7 +160,7 @@ class Warp:
         self.EBC[:,0] = 1
 
         # Force
-        fx,fy,m = 10.0, -0.0, 0.0
+        fx,fy,m = -0.05,-0.2, 0.0
         self.f = np.zeros([nDoF, nNodes])
         self.f[:, -1] = fx, fy, m
 
@@ -178,7 +183,7 @@ class Warp:
 
 
         #Young's module
-        E = 1.0e9
+        E = 1.0e8
         #beam radius
         self.r = r = 0.02
         #The curve is h*sin(k*x - pi/2.0)
@@ -201,7 +206,7 @@ class Warp:
 
 
         # Penalty parameters
-        self.wn = 1e6
+        self.wn = 1e7
 
 
 
@@ -211,7 +216,7 @@ class Warp:
         self.EBC[:,0] = 1
 
         # Force
-        fx,fy,m = 0.1, -0.2, 0.0
+        fx,fy,m = -0.05, -0.2, 0.0
         self.f = np.zeros([nDoF, nNodes])
         self.f[:, -1] = fx, fy, m
 
@@ -276,6 +281,9 @@ class Warp:
         ddP = np.zeros([nEquations,nEquations])
 
         #Setp 5: Assemble K and F
+        contact_dist = self.contact_dist
+
+        contact_dist.fill(np.inf)
 
         g_min = np.inf
 
@@ -296,8 +304,13 @@ class Warp:
                 ele = elements[closest_e]
                 da, db = disp[:, closest_e], disp[:, closest_e + 1]
                 contact, penalty, info = ele.penalty_term(da, db, xm, rm, wn)
+
+                if(info[1] < contact_dist[closest_e]):
+                    contact_dist[closest_e] = info[1]
+
                 print('Weft ', i , ' contacts element', closest_e, ' local coordinate is ',
                       info[0], ' distance is ', info[1], ' side is ',info[2])
+
                 #print('closest_e is ' , closest_e, 'info is ', info,' penalty is ', penalty)
                 _, f_contact, k_contact = penalty
                 # Step 3b: Get Global equation numbers
@@ -341,11 +354,40 @@ class Warp:
         return k_e, f_e, f_g
 
 
+    def compute_gap_lower_bound(self):
+        nEquations = self.nEquations
+
+        nElements = self.nElements
+
+        nNodesElements = self.nNodesElement
+
+        nDoF = self.nDoF
+
+        r = self.r
+
+        LM = self.LM
+
+        gap_lower_bound = np.empty(nEquations)
+        gap_lower_bound.fill(r)
+
+        contact_dist = self.contact_dist
+
+        for e in range(nElements):
+            if contact_dist[e] < 2*r:
+                e_dist = 2*r  - contact_dist[e]
+
+                for i in range(nNodesElements):
+                    for j in range(nDoF):
+                        eq_id = LM[i*nDoF + j,e]
+                        if eq_id >= 0:
+                            gap_lower_bound[eq_id] =  min(gap_lower_bound[eq_id], e_dist)
 
 
+        return gap_lower_bound
 
     def fem_calc(self):
         nEquations = self.nEquations
+
 
         nDoF = self.nDoF
 
@@ -355,35 +397,48 @@ class Warp:
 
         res0 = np.linalg.norm(dPi)
 
-        MAXITE = 800
+        MAXITE = 2000
         EPS = 1e-8
         found = False
-        dt_max = 0.5
+        dt_max = np.empty(nEquations)
+        dt_max.fill(0.5)
+        T = 0
         for ite in range(MAXITE):
-
+            print(self.wn)
 
             dPi,ddPi = self.assembly(u)
 
+            res = np.linalg.norm(dPi)
+
             du = np.linalg.solve(ddPi,dPi)
 
-            du_max = np.max(np.sqrt(du[0:-1:nDoF]**2 + du[1:-1:nDoF]**2))
+            ################################
+            # Time stepping
+            ###############################
 
-            dt = min(dt_max, self.r/du_max)
+            du_abs = np.repeat(np.sqrt(du[0:-1:nDoF]**2 + du[1:-1:nDoF]**2) + 1e-8, nDoF)
 
+            gap_lower_bound = self.compute_gap_lower_bound()
+
+            if(ite < 1000):
+                dt = min(dt_max[0], self.r/np.max(du_abs))
+
+            else:
+                dt = np.min(np.minimum(dt_max, gap_lower_bound/du_abs))
             u =  u - dt*du
 
             #print('dPi ', np.reshape(dPi,(3,-1),order='F'))
             #print('du is ', np.reshape(du,(3,-1),order='F'))
 
-            res = np.linalg.norm(dPi)
-            print('Ite/MAXITE: ', ite, ' /', MAXITE, 'In fem_calc res is', res)
+
+            print('Ite/MAXITE: ', ite, ' /', MAXITE, 'In fem_calc res is', res,' dt is ', dt )
             if(res < EPS or res < EPS*res0):
                 found = True
                 break
-
+            T += dt
         if(not found):
             print("Newton cannot converge in fem_calc")
-
+        print('T is ', T)
         return u
 
     def visualize_result(self, u, k=2):
