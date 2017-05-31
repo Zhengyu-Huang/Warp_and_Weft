@@ -336,8 +336,119 @@ class Warp:
 
         dPi = np.dot(K,d) - F + dP
         ddPi = K + ddP
-
         return dPi, ddPi
+
+
+    def compute_force(self,d):
+        '''
+        :param u: displacement of all freedoms
+        :return: return the force at each Dirichlet freedom
+        F_total = Ku - F + \sum f_c^i
+        '''
+
+        #Step 1: Access required global variables
+        nNodes = self.nNodes
+        nElements = self.nElements
+        nEquations = self.nEquations
+        nDoF = self.nDoF
+        nWeft = self.nWeft
+        ID = self.ID
+        LM = self.LM
+        EBC = self.EBC
+        g = self.g
+        elements = self.elements
+        wn = self.wn
+        wefts = self.wefts
+
+
+        #Step 2: Allocate K,  F,  dP and ddP
+        K = np.zeros([nDoF*nNodes,nDoF*nNodes])
+        F = np.zeros(nDoF*nNodes);
+
+
+        #Step 3: Assemble K and F
+
+        for e in range(nElements):
+
+
+
+            [k_e,f_e,f_g] = self._linear_beam_arrays(e);
+            #Step 3b: Get Global equation numbers
+            P = np.arange(e*nDoF,(e+2)*nDoF)
+
+
+            #Step 3d: Insert k_e, f_e, f_g, f_h
+            K[np.ix_(P,P)] += k_e
+
+            #Step 3b: Get Global equation numbers
+
+
+            #Step 3c: Eliminate Essential DOFs
+            I = (LM[:,e] >= 0);
+            P = P[I];
+
+            F[P] += f_e[I]
+
+
+
+
+        disp = np.empty([nDoF, nNodes])
+
+        for i in range(nNodes):
+            for j in range(nDoF):
+                disp[j,i] = d[ID[j,i]] if EBC[j,i] == 0 else g[j,i]
+
+        #Step 4: Allocate dP and ddP
+        dP = np.zeros(nDoF*nNodes)
+
+        #Setp 5: Assemble K and F
+        contact_dist = self.contact_dist
+
+        contact_dist.fill(np.inf)
+
+        g_min = np.inf
+
+        for i in range(nWeft):
+            xm, rm = wefts[0:2, i], wefts[2, i]
+            closest_e = -1
+            for e in range(nElements):
+                ele = elements[e]
+                da, db = disp[:, e], disp[:, e + 1]
+                contact, penalty, info = ele.penalty_term(da, db, xm, rm, wn)
+                if (contact and info[1] < g_min):
+                    closest_e, g_min = e, info[1]
+                    #print('closest_e is ' , closest_e, 'g_min is ', g_min,' penalty is ', penalty)
+
+
+            if (closest_e >= 0):
+
+                ele = elements[closest_e]
+                da, db = disp[:, closest_e], disp[:, closest_e + 1]
+                contact, penalty, info = ele.penalty_term(da, db, xm, rm, wn)
+
+                if(info[1] < contact_dist[closest_e]):
+                    contact_dist[closest_e] = info[1]
+
+                print('Weft ', i , ' contacts element', closest_e, ' local coordinate is ',
+                      info[0], ' distance is ', info[1], ' side is ',info[2])
+
+                #print('closest_e is ' , closest_e, 'info is ', info,' penalty is ', penalty)
+                _, f_contact, k_contact = penalty
+                # Step 3b: Get Global equation numbers
+                P = np.arange(closest_e*nDoF,(closest_e+2)*nDoF)
+
+
+
+                # Step 3d: Insert k_e, f_e, f_g, f_h
+                dP[P] += f_contact
+
+
+
+        F_total = np.dot(K,disp.flatten('F')) - F + dP
+
+
+        return F_total[(EBC==1).flatten('F')]
+
 
     def _linear_beam_arrays(self,e):
         '''
@@ -497,5 +608,9 @@ if __name__ == "__main__":
     warp = Warp('sine beam')
     #warp.assembly()
     d = warp.fem_calc()
-    warp.visualize_result(d,2)
 
+
+    f = warp.compute_force(d)
+    print('Dirichlet freedom force is ', f)
+
+    warp.visualize_result(d,2)
