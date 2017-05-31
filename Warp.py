@@ -38,7 +38,7 @@ class Warp:
         elif(type == 'sine beam'):
             self._sine_beam_data()
 
-
+        self.nEquations = (self.EBC == 0).sum()
 
 
         #construct  element nodes array
@@ -50,8 +50,12 @@ class Warp:
         #construct destination array
         #ID(d,n) is the global equation number of node n's dth freedom, -1 means no freedom
         self.ID = np.zeros([self.nDoF, self.nNodes],dtype = 'int') - 1
-        self.ID[:,1:self.nNodes] = np.reshape(np.arange(self.nDoF*(self.nNodes - 1)), (3,-1), order='F')
-
+        eq_id = 0
+        for i in range(self.nNodes):
+            for j in range(self.nDoF):
+                if(self.EBC[j,i] == 0):
+                    self.ID[j,i] = eq_id
+                    eq_id += 1
         #construct Local matrix
         #LM(d,e) is the global equation number of element e's d th freedom
         self.LM = np.zeros([self.nNodesElement*self.nDoF, self.nElements],dtype = 'int')
@@ -81,7 +85,7 @@ class Warp:
         self.nElements = nElements = 5
         self.elements = elements = []
         self.nNodes = nNodes = self.nElements + 1
-        self.nEquations = self.nDoF * (self.nNodes - 1)
+
 
         E = 1.0e4
         r = 0.1
@@ -125,7 +129,7 @@ class Warp:
         self.nElements = nElements = 100
         self.elements = elements = []
         self.nNodes = nNodes = self.nElements + 1
-        self.nEquations = self.nDoF * (self.nNodes - 1)
+
 
 
 
@@ -178,7 +182,7 @@ class Warp:
         self.nElements = nElements = 100
         self.elements = elements = []
         self.nNodes = nNodes = self.nElements + 1
-        self.nEquations = self.nDoF * (self.nNodes - 1)
+
 
 
 
@@ -206,7 +210,7 @@ class Warp:
 
 
         # Penalty parameters
-        self.wn = 1e7
+        self.wn = 1e6
 
 
 
@@ -215,10 +219,14 @@ class Warp:
         self.EBC = np.zeros([nDoF,nNodes],dtype='int')
         self.EBC[:,0] = 1
 
+        self.EBC[:,-1] = 1
+        self.g[:,-1] = -0.1, -0.2, 0.0
+
         # Force
-        fx,fy,m = -0.05, -0.2, 0.0
+        fx,fy,m = -0.00, 0.0, 0.0
         self.f = np.zeros([nDoF, nNodes])
         self.f[:, -1] = fx, fy, m
+        #self.f[:, nElements//2] = fx, fy, m
 
 
 
@@ -351,6 +359,7 @@ class Warp:
         g_e = np.reshape(g[:,IEM[:,e]], (nNodesElement*nDoF), order='F')
         f_g = -np.dot(k_e,g_e)
 
+
         return k_e, f_e, f_g
 
 
@@ -432,7 +441,7 @@ class Warp:
 
 
             print('Ite/MAXITE: ', ite, ' /', MAXITE, 'In fem_calc res is', res,' dt is ', dt )
-            if(res < EPS or res < EPS*res0):
+            if(res < EPS):# or res < EPS*res0):
                 found = True
                 break
             T += dt
