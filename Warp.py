@@ -238,7 +238,9 @@ class Warp:
         #self.f[:, nElements//2] = fx, fy, m
 
 
-
+    def reset_par(self,par):
+        self.par = par
+        self.g[:,-1] = self.par
 
     def assembly(self,d):
         '''
@@ -568,7 +570,7 @@ class Warp:
         if(not found):
             print("Newton cannot converge in fem_calc")
         print('T is ', T)
-        return u
+        return u,res
 
     def visualize_result(self, u, k=2):
         '''
@@ -614,13 +616,13 @@ class Warp:
 
 
 if __name__ == "__main__":
-    u_x,u_y,theta = 0.0,-0.1,0.0
+    u_x,u_y,theta = -0.1,-0.1,0.0
     wn = 1e6
-    MAXITE = 1000
+    MAXITE = 2000
     k = 3
     warp = Warp('sine beam',[u_x,u_y,theta],wn,k, MAXITE)
     #warp.assembly()
-    d = warp.fem_calc()
+    d,res = warp.fem_calc()
 
 
     f = warp.compute_force(d)
