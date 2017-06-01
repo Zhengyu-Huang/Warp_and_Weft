@@ -3,7 +3,7 @@ from Beam import *
 import matplotlib.pyplot as plt
 
 class Warp:
-    def __init__(self,type):
+    def __init__(self,type,par,wn,k, MAXITE):
 
         '''
                       Name            Description
@@ -24,19 +24,24 @@ class Warp:
                     g               Essential B.C. Value at each node is an array(nDoF, nNodes)
                     h               Natural B.C. Value at each node
         '''
-
+        self.type = type
+        self.par = par
+        #Penalty parameters
+        self.wn = wn
+        self.MAXITE = MAXITE
+        self.k = k
         self.nDim = nDim = 2
         self.nDoF = nDoF = 3
         self.nNodesElement = 2
 
         #build elements
-        self.type = type
+
         if(type == 'straight beam'):
-            self._straight_beam_data()
+            self._straight_beam_data( )
         elif(type == 'sine beam0'):
-            self._sine_beam_data0()
+            self._sine_beam_data0( )
         elif(type == 'sine beam'):
-            self._sine_beam_data()
+            self._sine_beam_data( )
 
         self.nEquations = (self.EBC == 0).sum()
 
@@ -71,7 +76,7 @@ class Warp:
 
 
 
-    def _straight_beam_data(self):
+    def _straight_beam_data(self ):
         '''
         g is dirichlet boundary condition
         f is the internal force
@@ -112,10 +117,9 @@ class Warp:
         self.wefts = wefts = np.zeros([nDim+1, nWeft]) # (x,y,r)
         wefts[:,0] = 0.4,0.22,0.1
 
-        #Penalty parameters
-        self.wn = 1e8
 
-    def _sine_beam_data0(self):
+
+    def _sine_beam_data0(self ):
         '''
         g is dirichlet boundary condition
         f is the internal force
@@ -126,7 +130,7 @@ class Warp:
 
 
 
-        self.nElements = nElements = 100
+        self.nElements = nElements = 50
         self.elements = elements = []
         self.nNodes = nNodes = self.nElements + 1
 
@@ -163,12 +167,17 @@ class Warp:
         self.EBC = np.zeros([nDoF,nNodes],dtype='int')
         self.EBC[:,0] = 1
 
-        # Force
-        fx,fy,m = -0.05,-0.2, 0.0
-        self.f = np.zeros([nDoF, nNodes])
-        self.f[:, -1] = fx, fy, m
+        self.EBC[:,-1] = 1
 
-    def _sine_beam_data(self):
+        self.g[:,-1] = self.par
+
+        # Force
+        #fx,fy,m = 0.1, -0.1, 0.0
+        self.f = np.zeros([nDoF, nNodes])
+        #self.f[:, -1] = fx, fy, m
+
+
+    def _sine_beam_data(self ):
         '''
         g is dirichlet boundary condition
         f is the internal force
@@ -179,7 +188,7 @@ class Warp:
 
 
 
-        self.nElements = nElements = 100
+        self.nElements = nElements = 50
         self.elements = elements = []
         self.nNodes = nNodes = self.nElements + 1
 
@@ -191,7 +200,7 @@ class Warp:
         #beam radius
         self.r = r = 0.02
         #The curve is h*sin(k*x - pi/2.0)
-        k = 3
+        k = self.k
         h = 0.1
         self.Coord = Coord = np.zeros([nDoF, nNodes])
         Coord[0, :] = np.linspace(0, 2*np.pi, nNodes)         # x
@@ -209,8 +218,7 @@ class Warp:
             wefts[:,i] = np.pi*(i+1.0)/k, h, rWeft
 
 
-        # Penalty parameters
-        self.wn = 1e6
+
 
 
 
@@ -220,12 +228,13 @@ class Warp:
         self.EBC[:,0] = 1
 
         self.EBC[:,-1] = 1
-        self.g[:,-1] = -0.1, -0.2, 0.0
+
+        self.g[:,-1] = self.par
 
         # Force
-        fx,fy,m = -0.00, 0.0, 0.0
+        #fx,fy,m = 0.1, -0.1, 0.0
         self.f = np.zeros([nDoF, nNodes])
-        self.f[:, -1] = fx, fy, m
+        #self.f[:, -1] = fx, fy, m
         #self.f[:, nElements//2] = fx, fy, m
 
 
@@ -517,7 +526,7 @@ class Warp:
 
         res0 = np.linalg.norm(dPi)
 
-        MAXITE = 2000
+        MAXITE = self.MAXITE
         EPS = 1e-8
         found = False
         dt_max = np.empty(nEquations)
@@ -536,12 +545,12 @@ class Warp:
             # Time stepping
             ###############################
 
-            du_abs = np.repeat(np.sqrt(du[0:-1:nDoF]**2 + du[1:-1:nDoF]**2) + 1e-8, nDoF)
+            du_abs = np.repeat(np.sqrt(du[0:-1:nDoF]**2 + du[1:-1:nDoF]**2) + 1e-12, nDoF)
 
             gap_lower_bound = self.compute_gap_lower_bound()
 
             if(ite < 1000):
-                dt = min(dt_max[0], self.r/np.max(du_abs))
+                dt = min(dt_max[0], self.r/np.max(du_abs)/10.0)
 
             else:
                 dt = np.min(np.minimum(dt_max, gap_lower_bound/du_abs))
@@ -590,11 +599,11 @@ class Warp:
 
 
 
-        plt.plot(coord_ref[0,:], coord_ref[1,:], '-o', label='ref')
-        plt.plot(coord_cur[0,:], coord_cur[1,:],'-o', label='current')
+        plt.plot(coord_ref[0,:], coord_ref[1,:], '-o', label='ref',markersize = 2)
+        plt.plot(coord_cur[0,:], coord_cur[1,:],'-o', label='current',markersize = 2)
 
         wefts = self.wefts
-        plt.plot(wefts[0, :], wefts[1, :], 'o', label='weft')
+        plt.plot(wefts[0, :], wefts[1, :], 'o', label='weft',markersize = 2)
         plt.axis('equal')
         plt.xlabel('x')
         plt.ylabel('y')
@@ -605,7 +614,11 @@ class Warp:
 
 
 if __name__ == "__main__":
-    warp = Warp('sine beam')
+    u_x,u_y,theta = 0.0,-0.1,0.0
+    wn = 1e6
+    MAXITE = 1000
+    k = 3
+    warp = Warp('sine beam',[u_x,u_y,theta],wn,k, MAXITE)
     #warp.assembly()
     d = warp.fem_calc()
 
