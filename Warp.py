@@ -531,11 +531,10 @@ class Warp:
         MAXITE = self.MAXITE
         EPS = 1e-8
         found = False
-        dt_max = np.empty(nEquations)
-        dt_max.fill(0.5)
+        dt_max = 0.5
+
         T = 0
         for ite in range(MAXITE):
-            print(self.wn)
 
             dPi,ddPi = self.assembly(u)
 
@@ -547,23 +546,32 @@ class Warp:
             # Time stepping
             ###############################
 
-            du_abs = np.repeat(np.sqrt(du[0:-1:nDoF]**2 + du[1:-1:nDoF]**2) + 1e-12, nDoF)
+            du_abs = np.repeat(np.sqrt(du[0::nDoF]**2 + du[1::nDoF]**2 + du[2::nDoF]**2) + 1e-12, nDoF)
 
             gap_lower_bound = self.compute_gap_lower_bound()
 
-            if(ite < 1000):
-                dt = min(dt_max[0], self.r/np.max(du_abs)/10.0)
 
-            else:
-                dt = np.min(np.minimum(dt_max, gap_lower_bound/du_abs))
+            dt = min(dt_max, self.r/np.max(du_abs)/10.0 )
+
+            # linear search
+            '''
+            if(ite > 1000):
+                for subite in range(50):
+                    dPi, _ = self.assembly(u - dt*du)
+                    if(np.linalg.norm(dPi) < res):
+                        break
+                    else:
+                        dt /= 10.0
+            '''
+
             u =  u - dt*du
 
-            #print('dPi ', np.reshape(dPi,(3,-1),order='F'))
-            #print('du is ', np.reshape(du,(3,-1),order='F'))
+
+
 
 
             print('Ite/MAXITE: ', ite, ' /', MAXITE, 'In fem_calc res is', res,' dt is ', dt )
-            if(res < EPS):# or res < EPS*res0):
+            if(res < EPS or res < EPS*res0 or np.max(du_abs) < EPS):
                 found = True
                 break
             T += dt
@@ -616,7 +624,7 @@ class Warp:
 
 
 if __name__ == "__main__":
-    u_x,u_y,theta = -0.1,-0.1,0.0
+    u_x,u_y,theta = 0.1,0.1,0.0
     wn = 1e6
     MAXITE = 2000
     k = 3
