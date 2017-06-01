@@ -19,7 +19,7 @@ law of the warp.
 def build_basis():
     theta = 0.0
     wn = 1e6
-    MAXITE = 1000
+    MAXITE = 2000
     k = 3
 
 
@@ -27,9 +27,9 @@ def build_basis():
     nEquations = warp.nEquations
 
     n,m = 10,10
-    pars = np.zeros(2,n*m)
+    pars = np.zeros([2,n*m])
     disps = np.zeros([nEquations,n*m])
-    fs = np.zeros(6,n*m)
+    fs = np.zeros([6,n*m])
     ress = np.zeros(n*m)
 
     u_x_range = np.linspace(-0.1,0.1,n)
@@ -42,18 +42,18 @@ def build_basis():
             d,res = warp.fem_calc()
             f = warp.compute_force(d)
 
-            pars[:,i*n + m] = [u_x,u_y]
-            disps[:,i*n + m] = d
-            fs[:,i*n + m] = f
-            ress[:,i*n + m] = res
+            pars[:,i*n + j] = [u_x,u_y]
+            disps[:,i*n +j] = d
+            fs[:,i*n + j] = f
+            ress[i*n + j] = res
 
     np.save('pars', pars)
     np.save('disps', disps)
     np.save('fs', fs)
     np.save('ress', ress)
 
-
+    return disps, fs, pars, ress
 
 
 if __name__ == '__main__':
-    build_basis()
+    V, F, par,res = build_basis()
