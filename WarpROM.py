@@ -74,11 +74,16 @@ class WarpROM(Warp):
             energy[i] = energy[i-1] + energy[i]
         energy = 1.0 - energy
 
-        basis_n = np.argmax(energy > self.err) + 1
+        basis_n = np.argmax(energy < self.err) + 1
+        '''
         plt.figure()
         plt.plot(np.arange(len(energy)) + 1, energy, '-o', markersize = 2)
         plt.xlabel('k')
         plt.ylabel(r'$1 - E_{POD}(k)$')
+        #plt.show()
+        '''
+        plt.figure()
+        plt.plot(s,'-ro')
         plt.show()
 
 
@@ -267,6 +272,7 @@ class WarpROM(Warp):
             print('Ite/MAXITE: ', ite, ' /', MAXITE, 'In fem_calc res is', res,' dt is ', dt )
             if(res < EPS):# or res < EPS*res0):
                 found = True
+                dPi,ddPi = self._rom_assembly(q)
                 break
             T += dt
         if(not found):
@@ -276,12 +282,23 @@ class WarpROM(Warp):
         u = np.dot(V,q)
         return u,res
 
+
+def basis_visualize():
+    #############Test hybrid solutions
+    disps = np.load('disps.npy')
+    pars = np.load('pars.npy')
+    for i in range(100):
+        par = np.array([pars[0,i], pars[1,i], 0.0])
+        warp.reset_par(par )
+        warp.visualize_result(disps[:,i], 2)
+
 if __name__ == '__main__':
-    u_x, u_y, theta = -0.1, -0.1, 0.0
+    u_x, u_y, theta = 0.2, -0.2, 0.0
     wn = 1e6
     MAXITE = 2000
     k = 3
-    warp = WarpROM('sine beam', [u_x, u_y, theta], wn, k, MAXITE,10,10,0.1)
+    err = 1e-5
+    warp = WarpROM('sine beam', [u_x, u_y, theta], wn, k, MAXITE,10,10,err)
     #build basis
     basis_n = warp._build_basis(['pars.npy', 'disps.npy', 'fs.npy', 'ress.npy'])
     #basis_n = warp._build_basis( )
@@ -296,10 +313,8 @@ if __name__ == '__main__':
 
     u,res = warp.rom_fem_calc()
 
-    #############Test hybrid solutions
-    disps = np.load(files[1])
+    warp.visualize_result(u)
 
-    warp.visualize_result(u, 2)
 
 
 
