@@ -554,15 +554,16 @@ class Warp:
             dt = min(dt_max, self.r/np.max(du_abs)/10.0 )
 
             # linear search
-            '''
-            if(ite > 1000):
+
+            if(ite > 1950):
                 for subite in range(50):
                     dPi, _ = self.assembly(u - dt*du)
                     if(np.linalg.norm(dPi) < res):
                         break
                     else:
-                        dt /= 10.0
-            '''
+                        dt /= 10
+
+
 
             u =  u - dt*du
 
