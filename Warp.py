@@ -625,7 +625,7 @@ class Warp:
 
 
 if __name__ == "__main__":
-    u_x,u_y,theta = 0.1,0.1,0.0
+    u_x,u_y,theta = 0.1,0.1,0.1
     wn = 1e6
     MAXITE = 2000
     k = 3

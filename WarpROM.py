@@ -20,8 +20,9 @@ law of the warp.
 '''
 class WarpROM(Warp):
 
-    def __init__(self,type,par,wn,k, MAXITE,n,m,err):
+    def __init__(self,type,par,wn,k, MAXITE,l,m,n,err):
         Warp.__init__(self,type,par,wn,k, MAXITE)
+        self.l = l
         self.n = n
         self.m = m
         self.err = err
@@ -32,29 +33,34 @@ class WarpROM(Warp):
         problem
         :return:
         '''
+        nDoF = self.nDoF
         if(files is None):
             nEquations = self.nEquations
 
-            n,m = self.n, self.m
-            pars = np.zeros([2,n*m])
-            disps = np.zeros([nEquations,n*m])
-            fs = np.zeros([6,n*m])
-            ress = np.zeros(n*m)
+            l,n,m = self.l, self.n, self.m
+            pars = np.zeros([nDoF,l*n*m])
+            disps = np.zeros([nEquations,l*n*m])
+            fs = np.zeros([6,l*n*m])
+            ress = np.zeros(l*n*m)
 
+            theta_range = np.linspace(-0.1, 0.1, l)
             u_x_range = np.linspace(-0.1,0.1,n)
             u_y_range = np.linspace(-0.1,0.1,m)
-            for i in range(n):
+            for i in range(l):
                 u_x = u_x_range[i]
                 for j in range(m):
                     u_y = u_y_range[j]
-                    self.reset_par([u_x,u_y,theta])
-                    d, res = self.fem_calc()
-                    f = self.compute_force(d)
+                    for k in range(n):
+                        theta = theta_range[k]
 
-                    pars[:,i*n + j] = [u_x,u_y]
-                    disps[:,i*n +j] = d
-                    fs[:,i*n + j] = f
-                    ress[i*n + j] = res
+                        self.reset_par([u_x,u_y,theta])
+                        d, res = self.fem_calc()
+                        f = self.compute_force(d)
+
+                        pars[:,i*n*m + j*n + k] = [u_x,u_y,theta]
+                        disps[:,i*n*m + j*n + k] = d
+                        fs[:,i*n*m + j*n + k] = f
+                        ress[i*n*m + j*n + k] = res
 
             np.save('pars', pars)
             np.save('disps', disps)
@@ -75,15 +81,17 @@ class WarpROM(Warp):
         energy = 1.0 - energy
 
         basis_n = np.argmax(energy < self.err) + 1
-        '''
-        plt.figure()
-        plt.plot(np.arange(len(energy)) + 1, energy, '-o', markersize = 2)
+
+        plt.figure(1)
+        plt.plot(np.arange(len(energy)) + 1, energy, '-o', markersize = 3)
         plt.xlabel('k')
         plt.ylabel(r'$1 - E_{POD}(k)$')
         #plt.show()
-        '''
-        plt.figure()
-        plt.plot(s,'-ro')
+
+        plt.figure(2)
+        plt.plot(np.arange(len(energy)) + 1, s,'-ro', markersize = 3)
+        plt.xlabel('k')
+        plt.ylabel(r'$\sigma$')
         plt.show()
 
 
@@ -293,29 +301,74 @@ def basis_visualize():
         warp.visualize_result(disps[:,i], 2)
 
 if __name__ == '__main__':
-    u_x, u_y, theta = 0.2, -0.2, 0.0
+    ROM_fs = np.load('ROM_fs.npy')
+    HOM_fs = np.load('ROM_fs.npy')
+    print(ROM_fs)
+    print(HOM_fs)
+    ress = np.linalg.norm(df[3:6,:])
+    plt.figure()
+    plt.plot(ress)
+    plt.show()
+
+    '''
     wn = 1e6
     MAXITE = 2000
     k = 3
     err = 1e-5
-    warp = WarpROM('sine beam', [u_x, u_y, theta], wn, k, MAXITE,10,10,err)
+    l = m = n = 5
+    warp = WarpROM('sine beam', [0.0, 0.0, 0.0], wn, k, MAXITE,l,m,n,err)
     #build basis
-    basis_n = warp._build_basis(['pars.npy', 'disps.npy', 'fs.npy', 'ress.npy'])
+    files = ['pars.npy', 'disps.npy', 'fs.npy', 'ress.npy']
+    basis_n = warp._build_basis(files)
     #basis_n = warp._build_basis( )
 
     print('basis number is  ', basis_n)
 
-    #build linear part reduced matrix
+    #######################################33
+    # test error for sampling points
+    #################################################
+    nEquations = warp.nEquations
+
+    disps = np.zeros([nEquations, l * n * m])
+    fs = np.zeros([6, l * n * m])
+    ress = np.zeros(l * n * m)
+    HOM_pars = np.load(files[0])
+    HOM_disps = np.load(files[1])
+    HOM_fs = np.load(files[2])
+    HOM_ress = np.load(files[3])
+
+
+    for i in range(l):
+        for j in range(m):
+            for k in range(n):
+                [u_x, u_y, theta] = HOM_pars[:, i * n * m + j * n + k]
+                warp.reset_par([u_x, u_y, theta])
+                warp._rom_assembly_linear()
+                d, res = warp.fem_calc()
+                f = warp.compute_force(d)
+
+                disps[:, i * n * m + j * n + k] = d
+                fs[:, i * n * m + j * n + k] = f
+                ress[i * n * m + j * n + k] = np.linalg.norm(f[3:6] - fs[3:6, i * n * m + j * n + k])
+
+    np.save('ROM_disps', disps)
+    np.save('ROM_fs', fs)
+    np.save('ROM_ress', ress)
+
+    u_x, u_y, theta = 0.1, -0.1, 0.0
+
+    warp.reset_par([u_x, u_y, theta])
+
+    # build linear part reduced matrix
     warp._rom_assembly_linear()
 
 
-    warp.reset_par([u_x,u_y,theta])
 
     u,res = warp.rom_fem_calc()
 
     warp.visualize_result(u)
 
-
+    '''
 
 
 
